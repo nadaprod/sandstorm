@@ -117,11 +117,19 @@ limitations under the License.
   <h1>Confirm your profile</h1>
   <div class="single-identity-editor">
     {{>_accountProfileEditor identity=identityToConfirm termsAndPrivacy=termsAndPrivacy
-                             staticHost=_staticHost}}
+                             staticHost=_staticHost db=_db}}
   </div>
 </template>
 
 <template name="_accountProfileEditor">
+{{!-- Expected arguments to data context:
+          identity: Object.  Should contain the usual Meteor.user fields (_id, profile, etc.)
+setActionCompleted: (optional) Function.  Callback triggered on profile saved or picture updated.
+   termsAndPrivacy: (optional) Object containing Strings termsUrl and/or privacyUrl.
+        staticHost: String.  Used to generate avatar URL.
+                db: instance of SandstormDb (optional, but needed for sandstormAccountsFirstSignIn?)
+       hideButtons: Boolean (optional, default value is false)
+--}}
   <div class="identity-editor">
     <form class="account-profile-editor" data-identity-id="{{identity._id}}">
       <div class="editor">
@@ -192,18 +200,17 @@ limitations under the License.
           <li class="terms">
             <label>
               <input type="checkbox" name="agreedToTerms" required> I have read and agree to the
-              {{#if termsUrl}}
-              <a target="_blank" href="{{termsUrl}}">Terms of Service</a>
-              {{#if privacyUrl}} and
-              {{/if}}
-              {{/if}}
-              {{#if privacyUrl}}
-              <a target="_blank" href="{{privacyUrl}}">Privacy policy</a>
-              {{/if}}.
+              {{#if termsUrl}}<a target="_blank" href="{{termsUrl}}">Terms of Service</a>
+              {{#if privacyUrl}} and {{/if}}{{/if}}{{#if privacyUrl}}
+              <a target="_blank" href="{{privacyUrl}}">Privacy policy</a>{{/if}}.
             </label>
           </li>
           {{/with}}
+          {{#if isPaymentsEnabled}}
+            {{> billingOptins}}
+          {{/if}}
           {{/unless}}
+          {{#unless hideButtons}}
           <li class="save">
             <button disabled="{{profileSaved}}">
               {{#if hasCompletedSignup}}Save{{else}}Continue{{/if}}
@@ -212,6 +219,7 @@ limitations under the License.
             <button class="logout">Cancel</button>
             {{/unless}}
           </li>
+          {{/unless}}
         </ul>
       </div>
     </form>

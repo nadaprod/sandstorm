@@ -19,13 +19,14 @@ tracker
 check
 reload
 random
-standard-minifiers
 
 iron:router
 sandstorm-accounts-ui
 sandstorm-accounts-packages
 sandstorm-email
 accounts-email-token
+accounts-ldap
+accounts-saml
 email
 accounts-identity
 simplesmtp
@@ -38,6 +39,7 @@ reactive-var
 sandstorm-autoupdate-apps
 sandstorm-db
 sandstorm-backend
+sandstorm-contacts
 sandstorm-identicons
 sandstorm-permissions
 sandstorm-ui-topbar
@@ -45,8 +47,13 @@ sandstorm-ui-applist
 sandstorm-ui-app-details
 sandstorm-ui-app-install
 sandstorm-ui-grainlist
+sandstorm-ui-grainview
 sandstorm-ui-autocomplete-input
+sandstorm-ui-powerbox
 meteor-node-forge
 fourseven:scss
-introjs
+npm-ed25519
 npm-request
+sha
+standard-minifier-css
+standard-minifier-js

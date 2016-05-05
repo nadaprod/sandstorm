@@ -69,36 +69,43 @@ if (Meteor.isServer) {
   });
 
   Meteor.startup(() => { globalDb.migrateToLatest(); });
+  LDAP_DEFAULTS.url = globalDb.getLdapUrl();
+  LDAP_DEFAULTS.base = globalDb.getLdapBase();
 }
 
 if (Meteor.isClient) {
-  Session.setDefault('shrink-navbar', false);
-  globalGrains = new ReactiveVar([]);
+  Session.setDefault("shrink-navbar", false);
+  globalGrains = new GrainViewList(globalDb);
+
+  // If Meteor._localStorage disappears, we'll have to write our own localStorage wrapper, I guess.
+  // Using window.localStorage is dangerous because it throws an exception if cookies are disabled.
+  Session.set("shrink-navbar", Meteor._localStorage.getItem("shrink-navbar") === "true");
   globalTopbar = new SandstormTopbar(globalDb,
     {
       get() {
-        return Session.get('topbar-expanded');
+        return Session.get("topbar-expanded");
       },
 
       set(value) {
-        Session.set('topbar-expanded', value);
+        Session.set("topbar-expanded", value);
       },
     },
     globalGrains,
     {
       get() {
-        return Session.get('shrink-navbar');
+        return Session.get("shrink-navbar");
       },
 
       set(value) {
-        Session.set('shrink-navbar', value);
+        Meteor._localStorage.setItem("shrink-navbar", value);
+        Session.set("shrink-navbar", value);
       },
     });
 
   globalAccountsUi = new AccountsUi(globalDb);
 
-  Template.registerHelper('globalTopbar', () => { return globalTopbar; });
-  Template.registerHelper('globalAccountsUi', () => { return globalAccountsUi; });
+  Template.registerHelper("globalTopbar", () => { return globalTopbar; });
+  Template.registerHelper("globalAccountsUi", () => { return globalAccountsUi; });
 } else {
   // TODO(cleanup): Refactor accounts registration stuff so that this doesn't need to be defined
   //   at all on the server.

@@ -55,6 +55,7 @@ IMAGES= \
     shell/public/github.svg \
     shell/public/google.svg \
     shell/public/key.svg \
+    shell/public/ldap.svg \
     shell/public/link.svg \
     shell/public/menu.svg \
     shell/public/notification.svg \
@@ -75,6 +76,7 @@ IMAGES= \
     shell/public/apps-m.svg \
     shell/public/appmarket-m.svg \
     shell/public/bug-m.svg \
+    shell/public/clipboard-m.svg \
     shell/public/close-m.svg \
     shell/public/copy-m.svg \
     shell/public/down-m.svg \
@@ -83,6 +85,7 @@ IMAGES= \
     shell/public/email-m.svg \
     shell/public/github-m.svg \
     shell/public/key-m.svg \
+    shell/public/ldap-m.svg \
     shell/public/keybase-m.svg \
     shell/public/link-m.svg \
     shell/public/notification-m.svg \
@@ -105,11 +108,6 @@ IMAGES= \
     shell/public/email-494949.svg \
     shell/public/close-FFFFFF.svg \
                                   \
-    shell/public/debug-9E9E9E.svg \
-    shell/public/email-9E9E9E.svg \
-    shell/public/github-9E9E9E.svg \
-    shell/public/google-9E9E9E.svg \
-                                  \
     shell/public/install-6A237C.svg \
     shell/public/install-9E40B5.svg \
     shell/public/plus-6A237C.svg \
@@ -128,7 +126,7 @@ IMAGES= \
 all: sandstorm-$(BUILD).tar.xz
 
 clean:
-	rm -rf bin tmp node_modules bundle shell-build sandstorm-*.tar.xz shell/.meteor/local $(IMAGES) shell/client/changelog.html shell/packages/*/.build* shell/packages/*/.npm/package/node_modules *.sig *.update-sig icons/node_modules shell/public/icons/icons-*.eot shell/public/icons/icons-*.ttf shell/public/icons/icons-*.svg shell/public/icons/icons-*.woff
+	rm -rf bin tmp node_modules bundle shell-build sandstorm-*.tar.xz shell/.meteor/local $(IMAGES) shell/client/changelog.html shell/packages/*/.build* shell/packages/*/.npm/package/node_modules *.sig *.update-sig icons/node_modules shell/node_modules shell/public/icons/icons-*.eot shell/public/icons/icons-*.ttf shell/public/icons/icons-*.svg shell/public/icons/icons-*.woff
 	@(if test -d deps && test ! -h deps; then printf "\033[0;33mTo update dependencies, use: make update-deps\033[0m\n"; fi)
 
 install: sandstorm-$(BUILD)-fast.tar.xz install.sh
@@ -146,6 +144,10 @@ test: sandstorm-$(BUILD)-fast.tar.xz
 
 installer-test:
 	(cd installer-tests && bash prepare-for-tests.sh && PYTHONUNBUFFERED=yes TERM=xterm SLOW_TEXT_TIMEOUT=120 ~/.local/bin/stodgy-tester --plugin stodgy_tester.plugins.sandstorm_installer_tests --on-vm-start=uninstall_sandstorm --rsync)
+
+stylecheck:
+	@which jscs > /dev/null 2>&1 || ( echo "You need jscs installed. Consider installing with e.g."; echo ; echo "npm -g install jscs"; echo ; exit 1)
+	cd shell && jscs .
 
 # ====================================================================
 # Dependencies
@@ -243,16 +245,17 @@ shell-env: tmp/.shell-env
 
 # Note that we need Ekam to build node_modules before we can run Meteor, hence
 # the dependency on tmp/.ekam-run.
-tmp/.shell-env: tmp/.ekam-run $(IMAGES) shell/client/changelog.html shell/client/_icons.scss
+tmp/.shell-env: tmp/.ekam-run $(IMAGES) shell/client/changelog.html shell/client/styles/_icons.scss
 	@mkdir -p tmp
 	@touch tmp/.shell-env
 	@mkdir -p node_modules/capnp
 	@bash -O extglob -c 'cp src/capnp/!(*test*).capnp node_modules/capnp'
+	@cd shell/ && meteor npm install
 
 icons/node_modules: icons/package.json
-	cd icons && $(METEOR_DEV_BUNDLE)/bin/npm install
+	cd icons && PATH=$(METEOR_DEV_BUNDLE)/bin:$$PATH $(METEOR_DEV_BUNDLE)/bin/npm install
 
-shell/client/_icons.scss: icons/node_modules icons/*svg icons/Gruntfile.js
+shell/client/styles/_icons.scss: icons/node_modules icons/*svg icons/Gruntfile.js
 	cd icons && PATH=$(METEOR_DEV_BUNDLE)/bin:$$PATH ./node_modules/.bin/grunt
 
 shell/client/changelog.html: CHANGELOG.md
@@ -309,10 +312,6 @@ shell/public/github-color.svg: icons/github.svg
 	@$(call color,custom color $<)
 	@sed -e 's/#111111/#191919/g' < $< > $@
 
-shell/public/%-9E9E9E.svg: icons/%.svg
-	@$(call color,custom color $<)
-	@sed -e 's/#111111/#9E9E9E/g' < $< > $@
-
 shell/public/email-494949.svg: icons/email.svg
 	@$(call color,custom color $<)
 	@sed -e 's/#111111/#494949/g' < $< > $@
@@ -324,6 +323,7 @@ shell/public/%-m.svg: icons/%.svg
 
 shell-build: shell/lib/* shell/client/* shell/server/* shell/shared/* shell/public/* shell/packages/* shell/packages/*/* shell/.meteor/packages shell/.meteor/release shell/.meteor/versions tmp/.shell-env
 	@$(call color,meteor frontend)
+	@test -z "$$(find -L shell/* -type l)" || (echo "error: broken symlinks in shell: $$(find -L shell/* -type l)" >&2 && exit 1)
 	@OLD=`pwd` && cd shell && PYTHONPATH=$$HOME/.meteor/tools/latest/lib/node_modules/npm/node_modules/node-gyp/gyp/pylib meteor build --directory "$$OLD/shell-build"
 
 # ====================================================================
@@ -340,11 +340,6 @@ sandstorm-$(BUILD).tar.xz: bundle
 sandstorm-$(BUILD)-fast.tar.xz: bundle
 	@$(call color,compress fast bundle)
 	@tar c --transform="s,^bundle,sandstorm-$(BUILD)," bundle | xz -c -0 --threads=0 > sandstorm-$(BUILD)-fast.tar.xz
-
-.docker: Dockerfile
-	@$(call color,docker build)
-	@docker build -t sandstorm .
-	@touch .docker
 
 # ====================================================================
 # app-index.spk

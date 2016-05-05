@@ -1,8 +1,13 @@
 {
   "preset": "airbnb",
+  "esnext": true,
+  "verbose": true,
   "fileExtensions": [".js"],
-  "validateQuoteMarks": {"mark": "'", "escape": true},
+  "validateQuoteMarks": {"mark": "\"", "escape": true},
   "disallowVar": true,
+  "maximumLineLength": 10000,
   "requirePaddingNewLinesBeforeLineComments": false,
-  "excludeFiles": ['.meteor', '**/node_modules']
+  "requireShorthandArrowFunctions": false,
+  "disallowQuotedKeysInObjects": false,  # https://github.com/jscs-dev/node-jscs/issues/2183
+  "excludeFiles": ['.meteor', '**/node_modules', 'public/*', '**/*.css']
 }

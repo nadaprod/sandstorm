@@ -481,15 +481,6 @@ public:
               return alternateMain->getMain();
             },
             "Manipulate spk files.")
-        .addSubCommand("reset-oauth",
-            [this]() {
-              return kj::MainBuilder(context, VERSION,
-                      "Resets the OAuth configuration of Meteor by deleting the configuration "
-                      "that is stored in Mongo.")
-                  .callAfterParsing(KJ_BIND_METHOD(*this, resetOauth))
-                  .build();
-            },
-            "Reset OAuth configuration.")
         .addSubCommand("continue",
             [this]() {
               return kj::MainBuilder(context, VERSION,
@@ -828,26 +819,9 @@ public:
     }
   }
 
-  kj::MainBuilder::Validity resetOauth() {
-    changeToInstallDir();
-
-    // Verify that Sandstorm is running.
-    if (getRunningPid() == nullptr) {
-      context.exitError("Sandstorm is not running.");
-    }
-
-    const Config config = readConfig();
-
-    // We'll run under the chroot.
-    enterChroot(false);
-
-    mongoCommand(config, kj::str("db.meteor_accounts_loginServiceConfiguration.remove({})"));
-
-    context.exitInfo(kj::str("reset OAuth configuration"));
-  }
-
   kj::MainBuilder::Validity adminToken() {
     changeToInstallDir();
+    checkAccess();
 
     // Get 20 random bytes for token.
     kj::byte bytes[20];
@@ -871,9 +845,10 @@ public:
       context.exitInfo(hexString);
     } else {
       context.exitInfo(kj::str("Generated new admin token.\n\nPlease proceed to ", config.rootUrl,
-        "/admin/settings/", hexString, " in order to access the admin settings page and configure ",
-        "your login system. This token will expire in 15 min, and if you take too long, you will ",
-        "have to regenerate a new token with `sandstorm admin-token`."));
+        "/setup/token/", hexString, " in order to access the admin settings page and configure "
+        "your login system. You must visit the link within 15 minutes, after which you will have "
+        "24 hours to complete the setup process.  If you need more time, you can always generate "
+        "a new token with `sandstorm admin-token`."));
     }
   }
 
@@ -951,6 +926,19 @@ private:
   void changeToInstallDir() {
     KJ_SYSCALL(chdir(getInstallDir().cStr()));
     changedDir = true;
+  }
+
+  void checkAccess() {
+    KJ_ASSERT(changedDir);
+    if (access("../var/sandstorm", W_OK) == -1) {
+      if (errno == EACCES) {
+        KJ_FAIL_REQUIRE(
+            "Sandstorm was not run with appropriate privileges; rerun as root or the user for "
+            "which it was installed.");
+      } else {
+        KJ_FAIL_SYSCALL("access", errno);
+      }
+    }
   }
 
   void checkOwnedByRoot(kj::StringPtr path, kj::StringPtr title) {
@@ -1718,7 +1706,10 @@ private:
     // If we got here, mongod either exited non-zero, or has no PID in its pidfile. In that case,
     // we do not know how proceed.
     KJ_FAIL_ASSERT("**mongod failed to start. Initial exit code: ", status,
-                   "bailing out now.");
+                   "bailing out now. For troubleshooting, read "
+                   "/opt/sandstorm/var/log/mongo.log (or var/log/mongo.log within your Sandstorm "
+                   "if installed to a different place) and visit: "
+                   "https://docs.sandstorm.io/en/latest/search.html?q=mongod+failed+to+start");
     return 0;
   }
 
@@ -1840,25 +1831,47 @@ private:
   }
 
   void bindSocketToFd(const Config& config, uint port, uint targetFdNum) {
+    sockaddr_storage sa;
+    sockaddr_in* sa4 = reinterpret_cast<sockaddr_in*>(&sa);
+    sockaddr_in6* sa6 = reinterpret_cast<sockaddr_in6*>(&sa);
+
+    // Various syscalls require slightly different arguments for v4 and v6 addresses.
+    // Keep track of which we're trying.
+    bool useV6 = false;
+
+    memset(&sa, 0, sizeof sa);
+
+    sa.ss_family = AF_INET;
+    int rc = inet_pton(AF_INET, config.bindIp.cStr(), &(sa4->sin_addr));
+
+    if (rc == 0) {
+      // If IPv4 address parsing fails, try IPv6
+      useV6 = true;
+      sa.ss_family = AF_INET6;
+      rc = inet_pton(AF_INET6, config.bindIp.cStr(), &(sa6->sin6_addr));
+      KJ_REQUIRE(rc == 1, "Bind IP is an invalid IP address:", config.bindIp);
+    }
+
     int sockFd;
-    KJ_SYSCALL(sockFd = socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+
+    if (useV6) {
+      KJ_SYSCALL(sockFd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    } else {
+      KJ_SYSCALL(sockFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    }
 
     // Enable SO_REUSEADDR so that `sandstorm restart` doesn't take minutes to succeed.
     int optval = 1;
     KJ_SYSCALL(setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)));
 
-    sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(port);
-    int rc = inet_pton(AF_INET, config.bindIp.cStr(), &(sa.sin_addr));
-    // If ipv4 address parsing fails, try ipv6
-    if (rc == 0) {
-      rc = inet_pton(AF_INET6, config.bindIp.cStr(), &(sa.sin_addr));
-      KJ_REQUIRE(rc == 1, "Bind IP is an invalid IP address:", config.bindIp);
+    if (useV6) {
+      sa6->sin6_port = htons(port);
+      KJ_SYSCALL(bind(sockFd, reinterpret_cast<sockaddr *>(&sa), sizeof(sockaddr_in6)));
+    } else {
+      sa4->sin_port = htons(port);
+      KJ_SYSCALL(bind(sockFd, reinterpret_cast<sockaddr *>(&sa), sizeof(sockaddr_in)));
     }
 
-    KJ_SYSCALL(bind(sockFd, reinterpret_cast<sockaddr *>(&sa), sizeof sa));
     KJ_SYSCALL(listen(sockFd, 511)); // 511 is what node uses as its default backlog
 
     if (sockFd != targetFdNum) {
@@ -1872,6 +1885,12 @@ private:
     Subprocess process([&]() -> int {
       // Create a listening socket for the meteor app on fd=3 and up
       uint socketFdStart = 3;
+
+      // First, bind the SMTP port to FD #3.
+      bindSocketToFd(config, config.smtpListenPort, socketFdStart);
+
+      // Then, bind the HTTP(S) port(s) to FD #4 and higher.
+      socketFdStart++;
       for (size_t i = 0; i < config.ports.size(); i++) {
         bindSocketToFd(config, config.ports[i], i + socketFdStart);
       }
@@ -1899,7 +1918,6 @@ private:
         KJ_SYSCALL(setenv("HTTPS_PORT", kj::str(*httpsPort).cStr(), true));
       }
 
-      KJ_SYSCALL(setenv("SANDSTORM_SMTP_PORT", kj::str(config.smtpListenPort).cStr(), true));
       KJ_SYSCALL(setenv("MONGO_URL",
           kj::str("mongodb://", authPrefix, "127.0.0.1:", config.mongoPort,
                   "/meteor", authSuffix).cStr(),

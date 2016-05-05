@@ -1,4 +1,4 @@
-Title: Install on Debian jessie, in dev mode, showing $SUDO_USER
+Title: Ensure a dev-mode install works, escalating to root, and adding $USER (aka $SUDO_USER) to the sandstorm group
 Vagrant-Box: jessie
 Precondition: sandstorm_not_installed
 Cleanup: uninstall_sandstorm
@@ -17,7 +17,7 @@ $[veryslow]Downloading: https://dl.sandstorm.io/
 $[veryslow]GPG signature is valid.
 $[veryslow]Sandstorm started.
 Visit this link to configure it:
-  http://local.sandstorm.io:6080/admin/
+  http://local.sandstorm.io:6080/
 To learn how to control the server, run:
   sandstorm help
 $[exitcode]0

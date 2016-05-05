@@ -1,8 +1,11 @@
-site_name: Sandstorm
+site_name: Docs
+theme_dir: 'docs/sandstorm_readthedocs_modified_theme'
 theme: 'readthedocs'
 repo_url: https://github.com/sandstorm-io/sandstorm/tree/master/docs
 markdown_extensions:
     - inline_graphviz
+extra_css:
+    - "extra.css"
 pages:
 - "Home": "index.md"
 - Using:
@@ -13,16 +16,15 @@ pages:
     - "Security practices": "using/security-practices.md"
     - "Security non-events": "using/security-non-events.md"
 - Developing apps:
-    - "Overview": "developing.md"
-    - "Overview of vagrant-spk": "vagrant-spk/index.md"
-    - "Installation": "vagrant-spk/installation.md"
+    - "Developer hub": "developing.md"
+    - "Installing vagrant-spk for package dev": "vagrant-spk/installation.md"
     - "Packaging tutorial": "vagrant-spk/packaging-tutorial.md"
     - "Packaging tutorial (Meteor)": "vagrant-spk/packaging-tutorial-meteor.md"
-    - "App publishing guide": "developing/publishing-apps.md"
-    - "App Developer Handbook": "developing/handbook.md"
+    - "App market publishing guide": "developing/publishing-apps.md"
+    - "App developer handbook": "developing/handbook.md"
     - "User authentication & permissions": "developing/auth.md"
     - "URLs, domain names, page titles": "developing/path.md"
-    - "Understanding & customizing": "vagrant-spk/customizing.md"
+    - "Understanding & customizing vagrant-spk": "vagrant-spk/customizing.md"
     - "Platform stacks": "vagrant-spk/platform-stacks.md"
     - "Code dependencies": "vagrant-spk/code-dependencies.md"
     - "Service dependencies": "vagrant-spk/services.md"
@@ -38,7 +40,8 @@ pages:
     - "Raw integration of pure client apps": "developing/raw-pure-client-apps.md"
 - Administering:
     - "Overview": "administering.md"
-    - "Installation": "install.md"
+    - "Installation & uninstall": "install.md"
+    - "Reference docs for install.sh": "administering/install-script.md"
     - "Administrator's guide": "administering/guide.md"
     - "Sandcats dynamic DNS": "administering/sandcats.md"
     - "Email": "administering/email.md"
@@ -49,4 +52,5 @@ pages:
     - "Free sandcats.io HTTPS": "administering/sandcats-https.md"
     - "Reverse Proxy": "administering/reverse-proxy.md"
     - "Self-signed SSL": "administering/self-signed.md"
+    - "Sandstorm for Work": "administering/for-work.md"
     - "Frequently asked questions": "administering/faq.md"

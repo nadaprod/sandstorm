@@ -394,6 +394,7 @@ public:
         "Sandboxed app attempted to upgrade protocol when client did not request this.");
 
     KJ_IF_MAYBE(dav, findHeader("dav")) {
+      kj::Vector<kj::String> extensions;
       for (auto level: split(*dav, ',')) {
         auto trimmed = trim(level);
         if (trimmed == "1") {
@@ -402,6 +403,14 @@ public:
           builder.setDavClass2(true);
         } else if (trimmed == "3") {
           builder.setDavClass3(true);
+        } else {
+          extensions.add(kj::mv(trimmed));
+        }
+      }
+      if (extensions.size() > 0) {
+        auto list = builder.initDavExtensions(extensions.size());
+        for (auto i: kj::indices(extensions)) {
+          list.set(i, extensions[i]);
         }
       }
     }
@@ -894,13 +903,14 @@ class WebSessionImpl final: public WebSession::Server {
 public:
   WebSessionImpl(kj::NetworkAddress& serverAddr,
                  UserInfo::Reader userInfo, SessionContext::Client sessionContext,
-                 SessionContextMap& sessionContextMap, kj::String&& sessionId,
+                 SessionContextMap& sessionContextMap, kj::String&& sessionId, kj::String&& tabId,
                  kj::String&& basePath, kj::String&& userAgent, kj::String&& acceptLanguages,
                  kj::String&& rootPath, kj::String&& permissions, kj::Maybe<kj::String> remoteAddress)
       : serverAddr(serverAddr),
         sessionContext(kj::mv(sessionContext)),
         sessionContextMap(sessionContextMap),
         sessionId(kj::mv(sessionId)),
+        tabId(kj::mv(tabId)),
         userDisplayName(percentEncode(userInfo.getDisplayName().getDefaultText())),
         userHandle(kj::heapString(userInfo.getPreferredHandle())),
         userPicture(kj::heapString(userInfo.getPictureUrl())),
@@ -946,6 +956,16 @@ public:
     PutParams::Reader params = context.getParams();
     auto content = params.getContent();
     kj::String httpRequest = makeHeaders("PUT", params.getPath(), params.getContext(),
+      kj::str("Content-Type: ", content.getMimeType()),
+      kj::str("Content-Length: ", content.getContent().size()),
+      content.hasEncoding() ? kj::str("Content-Encoding: ", content.getEncoding()) : nullptr);
+    return sendRequest(toBytes(httpRequest, content.getContent()), context);
+  }
+
+  kj::Promise<void> patch(PatchContext context) override {
+    PatchParams::Reader params = context.getParams();
+    auto content = params.getContent();
+    kj::String httpRequest = makeHeaders("PATCH", params.getPath(), params.getContext(),
       kj::str("Content-Type: ", content.getMimeType()),
       kj::str("Content-Length: ", content.getContent().size()),
       content.hasEncoding() ? kj::str("Content-Encoding: ", content.getEncoding()) : nullptr);
@@ -1137,6 +1157,7 @@ private:
   SessionContext::Client sessionContext;
   SessionContextMap& sessionContextMap;
   kj::String sessionId;
+  kj::String tabId;
   kj::String userDisplayName;
   kj::String userHandle;
   kj::String userPicture;
@@ -1182,6 +1203,7 @@ private:
     if (userAgent.size() > 0) {
       lines.add(kj::str("User-Agent: ", userAgent));
     }
+    lines.add(kj::str("X-Sandstorm-Tab-Id: ", tabId));
     lines.add(kj::str("X-Sandstorm-Username: ", userDisplayName));
     KJ_IF_MAYBE(u, userId) {
       lines.add(kj::str("X-Sandstorm-User-Id: ", *u));
@@ -1247,6 +1269,9 @@ private:
         break;
       case WebSession::Context::ETagPrecondition::EXISTS:
         lines.add(kj::str("If-Match: *"));
+        break;
+      case WebSession::Context::ETagPrecondition::DOESNT_EXIST:
+        lines.add(kj::str("If-None-Match: *"));
         break;
       case WebSession::Context::ETagPrecondition::MATCHES_ONE_OF:
         lines.add(kj::str("If-Match: ", kj::strArray(
@@ -1575,6 +1600,7 @@ public:
       context.getResults(capnp::MessageSize {2, 1}).setSession(
           kj::heap<WebSessionImpl>(serverAddress, params.getUserInfo(), params.getContext(),
                                    sessionContextMap, kj::str(sessionIdCounter++),
+                                   hexEncode(params.getTabId()),
                                    kj::heapString(sessionParams.getBasePath()),
                                    kj::heapString(sessionParams.getUserAgent()),
                                    kj::strArray(sessionParams.getAcceptableLanguages(), ","),
@@ -1592,6 +1618,7 @@ public:
       context.getResults(capnp::MessageSize {2, 1}).setSession(
           kj::heap<WebSessionImpl>(serverAddress, params.getUserInfo(), params.getContext(),
                                    sessionContextMap, kj::str(sessionIdCounter++),
+                                   hexEncode(params.getTabId()),
                                    kj::heapString(""), kj::heapString(""), kj::heapString(""),
                                    kj::heapString(config.getApiPath()),
                                    formatPermissions(userPermissions),

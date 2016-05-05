@@ -1,104 +1,93 @@
-var Future = Npm.require('fibers/future');
-var urlModule = Npm.require('url');
-var MailComposer = Npm.require('mailcomposer').MailComposer;
+const Future = Npm.require("fibers/future");
+const urlModule = Npm.require("url");
+const MailComposer = Npm.require("mailcomposer").MailComposer;
 
 SandstormEmail = {};
 
-var getSmtpUrl = function () {
-  var setting = Settings.findOne({_id: "smtpUrl"});
-  if (setting) {
-    return setting.value;
-  } else {
-    return process.env.MAIL_URL;
-  }
+const getSmtpConfig = function () {
+  const config = Settings.findOne({ _id: "smtpConfig" });
+  return config && config.value;
 };
 
-var makePool = function (mailUrlString) {
-  var mailUrl = urlModule.parse(mailUrlString);
-  if (mailUrl.protocol !== 'smtp:')
-    throw new Error("Email protocol in $MAIL_URL (" +
-                    mailUrlString + ") must be 'smtp'");
-
-  var port = +(mailUrl.port);
-  var auth = false;
-  if (mailUrl.auth) {
-    var parts = mailUrl.auth.split(':', 2);
-    auth = {user: parts[0],
-            pass: parts[1]};
+const makePool = function (mailConfig) {
+  const simplesmtp = Npm.require("simplesmtp");
+  let auth = false;
+  if (mailConfig.auth && (mailConfig.auth.user || mailConfig.auth.pass)) {
+    auth = mailConfig.auth;
   }
 
-  var simplesmtp = Npm.require('simplesmtp');
-  var pool = simplesmtp.createClientPool(
-    port,  // Defaults to 25
-    mailUrl.hostname,  // Defaults to "localhost"
-    { secureConnection: (port === 465),
+  const pool = simplesmtp.createClientPool(
+    mailConfig.port,
+    mailConfig.hostname,
+    { secureConnection: (mailConfig.port === 465),
       // XXX allow maxConnections to be configured?
-      auth: auth });
+      auth, });
 
-  pool._future_wrapped_sendMail = _.bind(Future.wrap(pool.sendMail), pool);
+  pool._futureWrappedSendMail = _.bind(Future.wrap(pool.sendMail), pool);
   return pool;
 };
 
-// We construct smtpPool at the first call to Email.send, so that
-// Meteor.startup code can set $MAIL_URL.
-var pool;
-var configured = false;
+// We construct the SMTP pool at the first call to Email.send, so that
+// other code like migrations can modify the SMTP configuration.
+let pool;
+let configured = false;
 
-Meteor.startup(function() {
-  Settings.find({_id: "smtpUrl"}).observeChanges({
-    removed : function () {
+Meteor.startup(function () {
+  Settings.find({ _id: "smtpConfig" }).observeChanges({
+    removed: function () {
       configured = false;
     },
-    changed : function () {
+
+    changed: function () {
       configured = false;
     },
-    added : function () {
+
+    added: function () {
       configured = false;
-    }
+    },
   });
-
-  // Accounts.emailToken is set to use "Email" by default. Change it to use our mail service.
-  Accounts.emailToken.setEmailPackage("SandstormEmail");
 });
 
-var getPool = function (smtpUrl) {
-  if (smtpUrl) {
-    return makePool(smtpUrl);
+const getPool = function (smtpConfig) {
+  if (smtpConfig) {
+    return makePool(smtpConfig);
   } else if (!configured) {
     configured = true;
-    var url = getSmtpUrl();
-    if (url) {
-      pool = makePool(url);
+    const config = getSmtpConfig();
+    if (config) {
+      pool = makePool(config);
     }
   }
 
   return pool;
 };
 
-var next_devmode_mail_id = 0;
-var output_stream = process.stdout;
+let nextDevmodeMailId = 0;
+const outputStream = process.stdout;
 
-var devModeSend = function (mc) {
-  var devmode_mail_id = next_devmode_mail_id++;
+const devModeSend = function (mc) {
+  // This seems to be dead code.
+  const devmodeMailId = nextDevmodeMailId++;
 
-  var stream = output_stream;
+  const stream = outputStream;
 
   // This approach does not prevent other writers to stdout from interleaving.
-  stream.write("====== BEGIN MAIL #" + devmode_mail_id + " ======\n");
+  stream.write("====== BEGIN MAIL #" + devmodeMailId + " ======\n");
   stream.write("(Mail not sent; to enable sending, set the MAIL_URL " +
                "environment variable.)\n");
   mc.streamMessage();
-  mc.pipe(stream, {end: false});
-  var future = new Future;
-  mc.on('end', function () {
-    stream.write("====== END MAIL #" + devmode_mail_id + " ======\n");
-    future['return']();
+  mc.pipe(stream, { end: false });
+  const future = new Future;
+  mc.on("end", function () {
+    stream.write("====== END MAIL #" + devmodeMailId + " ======\n");
+    future["return"]();
   });
+
   future.wait();
 };
 
-var smtpSend = function (pool, mc) {
-  pool._future_wrapped_sendMail(mc).wait();
+const smtpSend = function (pool, mc) {
+  pool._futureWrappedSendMail(mc).wait();
 };
 
 // Old comment below
@@ -135,12 +124,18 @@ var smtpSend = function (pool, mc) {
  * @param {String} [options.subject]  "Subject:" line
  * @param {String} [options.text|html] Mail body (in plain text or HTML)
  * @param {Object} [options.headers] Dictionary of custom headers
- * @param {String} [options.smtpUrl] SMTP server to use. Otherwise defaults to configured one.
+ * @param {Object} [options.smtpConfig] SMTP server to use. Otherwise defaults to configured one.
+ * @param {String} [options.smtpConfig.hostname] SMTP server hostname.
+ * @param {Number} [options.smtpConfig.port] SMTP server port.
+ * @param {Object} [options.smtpConfig.auth] SMTP server authentication tokens.  Optional.
+ * @param {String} [options.smtpConfig.auth.user] Username of user to log in to SMTP server as.  Optional.
+ * @param {String} [options.smtpConfig.auth.pass] Password of user to log in to SMTP server as.  Optional.
  * @param {Object} [options.attachments] Attachments. See:
  *   https://github.com/nodemailer/mailcomposer/tree/v0.1.15#add-attachments
+ * @param {String} [options.envelopeFrom] Envelope sender.
  */
 SandstormEmail.send = function (options) {
-  var mc = new MailComposer();
+  const mc = new MailComposer();
 
   // setup message data
   mc.setMessageOption({
@@ -151,8 +146,16 @@ SandstormEmail.send = function (options) {
     replyTo: options.replyTo,
     subject: options.subject,
     text: options.text,
-    html: options.html
+    html: options.html,
   });
+
+  if (options.envelopeFrom) {
+    const envelope = mc.getEnvelope();
+    envelope.from = options.envelopeFrom;
+    mc.setMessageOption({
+      envelope: envelope,
+    });
+  }
 
   _.each(options.headers, function (value, name) {
     mc.addHeader(name, value);
@@ -162,7 +165,7 @@ SandstormEmail.send = function (options) {
     mc.addAttachment(value);
   });
 
-  SandstormEmail.rawSend(mc, options.smtpUrl);
+  SandstormEmail.rawSend(mc, options.smtpConfig);
 };
 
 /**
@@ -174,12 +177,12 @@ SandstormEmail.send = function (options) {
  * @param {Object} mc A MailCompser object that you wish to send
  * @param {String} smtpUrl SMTP server to use. If falsey, defaults to configured one.
 */
-SandstormEmail.rawSend = function (mc, smtpUrl) {
+SandstormEmail.rawSend = function (mc, smtpConfig) {
   // SimpleSmtp does not add leading dots, so we need to.
   // See http://tools.ietf.org/html/rfc5321#section-4.5.2
   mc._message.body = mc._message.body.replace(/(^|\n)\./g, "$1..");
 
-  var pool = getPool(smtpUrl);
+  const pool = getPool(smtpConfig);
   if (pool) {
     smtpSend(pool, mc);
   } else {

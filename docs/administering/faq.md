@@ -14,13 +14,6 @@ the default recommendation. If not, remove the `sudo` from the
 instructions below.
 
 * Use e.g. `ssh` to log into the server running Sandstorm.
-* Run this command to deconfigure all existing OAuth-based login providers.
-
-        sudo sandstorm reset-oauth
-
-  On success, it will print:
-
-      reset OAuth configuration
 
 * Run this command to generate a token you can use to log in as an admin, for emergency administration.
 
@@ -56,7 +49,6 @@ MONGO_PORT=6081
 BIND_IP=127.0.0.1
 BASE_URL=http://mydomain.com:6080
 WILDCARD_HOST=*.mydomain.com:6080
-MAIL_URL=
 UPDATE_CHANNEL=dev
 ```
 
@@ -166,23 +158,29 @@ Sometimes Sandstorm seems to be working fine but can launch no apps.
 
 If you see an error screen like this:
 
-![Unable to resolve the server's DNS address, screenshot in Chromium](http://rose.makesad.us/~paulproteus/tmp/unable-to-resolve.png)
+![Unable to resolve the server's DNS address, screenshot in Chromium](https://alpha-evgl4wnivwih0k6mzxt3.sandstorm.io/unable-to-resolve.png)
 
 even when the app management interface seems to work fine:
 
-![Skinny Sandstorm admin interface, showing your app instance](http://rose.makesad.us/~paulproteus/tmp/works-fine.png)
+![Skinny Sandstorm admin interface, showing your app instance](https://alpha-evgl4wnivwih0k6mzxt3.sandstorm.io/works-fine.png)
 
-This typically relates to Sandstorm's need for [wildcard
-DNS](wildcard.md). Sandstorm runs each app _session_ on a unique,
+This typically relates to Sandstorm's need for **wildcard DNS**. If you use HTTPS, you
+will also need **wildcard HTTPS**. Keep reading for more information.
+
+**Wildcard DNS.** Sandstorm runs each app _session_ on a unique,
 temporary subdomain. Here's what to check:
 
-* **Make sure the `WILDCARD_HOST` has valid syntax.** In the Sandstorm config file (typically `/opt/sandstorm/sandstorm.conf`, look for the `WILDCARD_HOST` config item. Note that this should not have a protocol as part of it. A valid line might be:
+- **Make sure the `WILDCARD_HOST` has valid syntax.** In the Sandstorm config file (typically `/opt/sandstorm/sandstorm.conf`, look for the `WILDCARD_HOST` config item. Note that this should not have a protocol as part of it. A valid line might be:
 
 ```
 WILDCARD_HOST=*.yourname.sandcats.io:6080
 ```
 
-* **Make sure wildcard DNS works for your chosen domain**. See also [this issue in our repository](https://github.com/sandstorm-io/sandstorm/issues/114). If setting up wildcard DNS is a hassle for you, consider using our free [Sandcats dynamic DNS](sandcats.md) service for your `WILDCARD_HOST`.
+- **Make sure wildcard DNS works for your chosen domain**. See also [this issue in our repository](https://github.com/sandstorm-io/sandstorm/issues/114). If setting up wildcard DNS is a hassle for you, consider using our free [Sandcats dynamic DNS](sandcats.md) service for your `WILDCARD_HOST`.
+
+- You can read [more about Sandstorm and wildcard DNS](wildcard.md).
+
+**Wildcard HTTPS.** If wildcard DNS is configured properly, and you can access the Sandstorm shell, but you get an error accessing grains, keep in mind that your browser must trust `*.sandstorm.example.com` not just `sandstorm.example.com`. You can test this by visiting a random HTTPS URL within your Sandstorm domain, such as [https://just-testing.sandstorm.example.com](https://just-testing.sandstorm.example.com). If you see a browser certificate warning, then that is the root of your problem. You can read more about configuring HTTPS in our [HTTPS topic guide](ssl.md).
 
 ## Can I customize the root page of my Sandstorm install?
 
@@ -259,3 +257,116 @@ the `http_proxy` and `https_proxy` environment variables being set.
 **Note** that the sandcats.io dynamic DNS protocol requires the ability to send UDP packets to the
 Internet, so if the system cannot do that, then its IP address will not auto-update. If your IP
 address does not change frequently, this should be OK.
+
+## How do I use Sandstorm with an internal IP address?
+
+Since Sandstorm [relies on wildcard DNS](wildcard.md), you will need to modify your `sandstorm.conf`
+to point at a hostname that resolves to your internal IP address. If your organization cannot
+provide one, you can either use our free [sandcats.io DNS service & HTTPS that uses public IP
+addresses](sandcats.md), or use [xip.io](http://xip.io)'s free wildcard DNS for internal IP
+addresses.
+
+To use xip.io, if your Sandstorm server is at (for example) 10.0.0.2, then you should:
+
+- Open `/opt/sandstorm/sandstorm.conf` in your favorite text editor, for example by running
+  `sudo nano /opt/sandstorm/sandstorm.conf`
+
+- Find the line containing `BASE_URL` and modify it to say:
+
+```bash
+BASE_URL=http://10.0.0.2.xip.io:6080
+```
+
+- Make sure the port number above corresponds to the port in your `PORT=...` line.
+
+- Find the line containing `WILDCARD_HOST` and modify it to say:
+
+```bash
+WILDCARD_HOST=*.10.0.0.2.xip.io:6080
+```
+
+- Make sure the port number is the same as the port number in `BASE_URL`.
+
+- Make sure your configuration file does **not** use the `HTTPS_PORT` or `SANDCATS_BASE_DOMAIN`
+  setttings, which refer to integrating with the sandcats.io DNS & HTTPS service. If you see them,
+  comment them out or remove them.
+
+```bash
+#HTTPS_PORT=443
+#SANDCATS_BASE_DOMAIN=sandcats.io
+```
+
+
+- Save and exit your text editor (for example with `Ctrl-o` and `Ctrl-x` in nano).
+
+- Restart Sandstorm by running this command in a terminal.
+
+```
+sudo sandstorm restart
+```
+
+- Visit your Sandstorm install at http://10.0.0.2.xip.io/ and make sure it is working OK.
+
+Note that you might not have to do this! For the purpose of this question, an internal IP address is
+something like 192.168.x.y or 10.x.y.z; see [Wikipedia's article on private
+networks](https://en.wikipedia.org/wiki/Private_network).  Many organizations use global IP
+addresses like 18.x.y.z and rely on their organization firewall to prevent external access; in that
+case, our free [sandcats.io DNS service](sandcats.md) should work fine.
+
+Keep in mind that xip.io is maintained by the kind and gracious [Sam Stephenson](http://xip.io/),
+not by a member of the Sandstorm team. If you want to run your own wildcard DNS service similar to
+xip.io inside your own organization, you can do so by [downloading
+xipd](https://github.com/sstephenson/xipd) which Sam generously licenses as open source software.
+You can also set up your own `*.sandstorm.example.com` subdomain within your organization's domain.
+
+## mongod failed to start. What's going on?
+
+If your Sandstorm server isn't working, and you find this text in `/opt/sandstorm/var/log/sandstorm.log`:
+
+```
+**mongod failed to start. Initial exit code: 100, bailing out now.
+```
+
+then MongoDB is unable to start. Sandstorm operates an embedded MongoDB database instance to store
+information like what user accounts exist and what permissions they have. Keep the following in mind
+to address the issue.
+
+- Your system might not have enough free disk space. Sandstorm requires about 500 MB available space
+  to start successfully.
+
+- You can read `/opt/sandstorm/var/log/mongo.log` to find out MongoDB's true error
+  message. Specifically, the file will be in `var/log/mongo.log` underneath wherever Sandstorm is
+  installed; most Sandstorm installations are at `/opt/sandstorm`.
+
+- You might be running into a bug in Sandstorm where it is unable to start MongoDB successfully. If
+  so, this is a bug in Sandstorm that probably affects many, many people, and if you report this
+  issue, we will be grateful; your bug report could lead to a code change that fixes many people's
+  Sandstorm servers. To do that, we need to hear from you.
+
+- In theory, this error message can occur if your Sandstorm database (stored in
+  `/opt/sandstorm/var/mongo`) has become corrupted. So far, we have seen no instances of this in the
+  wild. If it does occur, you can likely recover from the situation. Even if there is a problem with
+  the Sandstorm MongoDB instance, note that grain data is safely stored separately, so any grain data
+  would not be affected.
+
+To get further help, please email support@sandstorm.io. Please include the most recent 100 lines
+from the MongoDB log file, if you can.
+
+## How do I enable WebSockets proxying? or, Why do some apps seem to crash & reload?
+
+Some Sandstorm users find that apps like Telescope and Groove Basin seem to load an initial screen
+and then refresh the page, in a loop. This is typically a symptom of Sandstorm running behind a
+reverse proxy that needs WebSockets proxying to be enabled.
+
+For `nginx`: consult the
+[nginx-example.conf](https://github.com/sandstorm-io/sandstorm/blob/master/docs/administering/sample-config/nginx-example.conf)
+that we provide. Pay special attention to:
+
+- The `map $http_upgrade $connection_upgrade` section. You need to add this to the config
+  file for this site.
+
+- The two `proxy_set_header` lines relating to `Upgrade` and `Connection`.
+
+For `apache2`: consult the
+[apache-virtualhost.conf](https://github.com/sandstorm-io/sandstorm/blob/master/docs/administering/sample-config/apache-virtualhost.conf)
+that we provide. Pay special attention to the `RewriteRule` stanzas.

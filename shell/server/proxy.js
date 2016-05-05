@@ -14,27 +14,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const Crypto = Npm.require('crypto');
-const ChildProcess = Npm.require('child_process');
-const Fs = Npm.require('fs');
-const Path = Npm.require('path');
-const Future = Npm.require('fibers/future');
-const Http = Npm.require('http');
-const Url = Npm.require('url');
-const Promise = Npm.require('es6-promise').Promise;
-const Capnp = Npm.require('capnp');
-const Net = Npm.require('net');
+const Crypto = Npm.require("crypto");
+const ChildProcess = Npm.require("child_process");
+const Fs = Npm.require("fs");
+const Path = Npm.require("path");
+const Future = Npm.require("fibers/future");
+const Http = Npm.require("http");
+const Url = Npm.require("url");
+const Promise = Npm.require("es6-promise").Promise;
+const Capnp = Npm.require("capnp");
+const Net = Npm.require("net");
 
-const ByteStream = Capnp.importSystem('sandstorm/util.capnp').ByteStream;
-const ApiSession = Capnp.importSystem('sandstorm/api-session.capnp').ApiSession;
-const WebSession = Capnp.importSystem('sandstorm/web-session.capnp').WebSession;
-const HackSession = Capnp.importSystem('sandstorm/hack-session.capnp');
-const Supervisor = Capnp.importSystem('sandstorm/supervisor.capnp').Supervisor;
-const Backend = Capnp.importSystem('sandstorm/backend.capnp').Backend;
-
-SANDSTORM_ALTHOME = Meteor.settings && Meteor.settings.home;
-SANDSTORM_LOGDIR = (SANDSTORM_ALTHOME || '') + '/var/log';
-SANDSTORM_VARDIR = (SANDSTORM_ALTHOME || '') + '/var/sandstorm';
+const ByteStream = Capnp.importSystem("sandstorm/util.capnp").ByteStream;
+const ApiSession = Capnp.importSystem("sandstorm/api-session.capnp").ApiSession;
+const WebSession = Capnp.importSystem("sandstorm/web-session.capnp").WebSession;
+const HackSession = Capnp.importSystem("sandstorm/hack-session.capnp");
+const Supervisor = Capnp.importSystem("sandstorm/supervisor.capnp").Supervisor;
+const Backend = Capnp.importSystem("sandstorm/backend.capnp").Backend;
 
 const storeReferralProgramInfoApiTokenCreated = (db, accountId, identityId, apiTokenAccountId) => {
   // From the Referral program's perspective, if Bob's Account has no referredByComplete, then we
@@ -54,15 +50,15 @@ const storeReferralProgramInfoApiTokenCreated = (db, accountId, identityId, apiT
 
   if (Meteor.users.find({
     _id: bobAccountId,
-    referredByComplete: {$exists: true},
+    referredByComplete: { $exists: true },
   }).count() > 0) {
     return;
   }
 
   // Only actually update Bob's Identity ID if there is no referredBy.
   Meteor.users.update(
-    {_id: bobIdentityId, referredBy: {$exists: false}},
-    {$set: {referredBy: aliceAccountId}});
+    { _id: bobIdentityId, referredBy: { $exists: false } },
+    { $set: { referredBy: aliceAccountId } });
 };
 
 function referralProgramLogSharingTokenUse(db, bobAccountId) {
@@ -86,15 +82,15 @@ function referralProgramLogSharingTokenUse(db, bobAccountId) {
   }
 
   // Bail out if Bob has a referredByComplete.
-  if (Meteor.users.find({_id: bobAccountId, referredByComplete: {$exists: true}}).count() > 0) {
+  if (Meteor.users.find({ _id: bobAccountId, referredByComplete: { $exists: true } }).count() > 0) {
     return;
   }
 
   // Look for a referredBy on any of Bob's identities.
-  const bobIdentityIds = SandstormDb.getUserIdentityIds(Meteor.users.findOne({_id: bobAccountId}));
+  const bobIdentityIds = SandstormDb.getUserIdentityIds(Meteor.users.findOne({ _id: bobAccountId }));
   const bobIdentityWithReferredBy = Meteor.users.findOne({
-    _id: {$in: bobIdentityIds},
-    referredBy: {$exists: true},
+    _id: { $in: bobIdentityIds },
+    referredBy: { $exists: true },
   });
 
   if (!bobIdentityWithReferredBy) {
@@ -107,7 +103,7 @@ function referralProgramLogSharingTokenUse(db, bobAccountId) {
   const now = new Date();
   Meteor.users.update({
     _id: bobAccountId,
-    referredByComplete: {$exists: false},
+    referredByComplete: { $exists: false },
   }, {
     $set: {
       referredByComplete: bobIdentityWithReferredBy.referredBy,
@@ -116,13 +112,13 @@ function referralProgramLogSharingTokenUse(db, bobAccountId) {
   });
 
   // Update Alice's Account.referredIdentityIds.
-  Meteor.users.update({_id: aliceAccountId}, {
-    $push: {referredIdentityIds: bobIdentityWithReferredBy._id},
+  Meteor.users.update({ _id: aliceAccountId }, {
+    $push: { referredIdentityIds: bobIdentityWithReferredBy._id },
   });
 
   // Remove now-redundant Bob identity referredBy.
-  Meteor.users.update({_id: bobIdentityWithReferredBy._id}, {
-    $unset: {referredBy: true},
+  Meteor.users.update({ _id: bobIdentityWithReferredBy._id }, {
+    $unset: { referredBy: true },
   });
 }
 
@@ -131,20 +127,20 @@ function referralProgramLogSharingTokenUse(db, bobAccountId) {
 // backslashes. For security reasons, we MUST NOT whitelist any user-agents
 // that may render html and execute embedded scripts.
 BASIC_AUTH_USER_AGENTS = [
-  'git\\/',
-  'GitHub-Hookshot\\/',
-  'mirall\\/',
-  'Mozilla\\/5\\.0 \\([^\\\\]*\\) mirall\\/',
-  'Mozilla\\/5\\.0 \\(iOS\\) ownCloud-iOS\\/',
-  'Mozilla\\/5\\.0 \\(Android\\) ownCloud-android\\/',
-  'litmus\\/',
+  "git\\/",
+  "GitHub-Hookshot\\/",
+  "mirall\\/",
+  "Mozilla\\/5\\.0 \\([^\\\\]*\\) mirall\\/",
+  "Mozilla\\/5\\.0 \\(iOS\\) ownCloud-iOS\\/",
+  "Mozilla\\/5\\.0 \\(Android\\) ownCloud-android\\/",
+  "litmus\\/",
 ];
-BASIC_AUTH_USER_AGENTS_REGEX = new RegExp('^(' + BASIC_AUTH_USER_AGENTS.join('|') + ')', '');
+BASIC_AUTH_USER_AGENTS_REGEX = new RegExp("^(" + BASIC_AUTH_USER_AGENTS.join("|") + ")", "");
 
 const SESSION_PROXY_TIMEOUT = 60000;
 
 const sandstormCoreFactory = makeSandstormCoreFactory();
-const backendAddress = 'unix:' + (SANDSTORM_ALTHOME || '') + Backend.socketPath;
+const backendAddress = "unix:" + (SANDSTORM_ALTHOME || "") + Backend.socketPath;
 let sandstormBackendConnection = Capnp.connect(backendAddress, sandstormCoreFactory);
 let sandstormBackend = sandstormBackendConnection.restore(null, Backend);
 
@@ -167,7 +163,7 @@ let disconnectCount = 0;
 Meteor.setInterval(() => {
   if (!backendHealthy) {
     if (disconnectCount++ > 2) process.abort();
-    console.error('error: Backend hasn\'t responded in 30 seconds! Reconnecting.');
+    console.error("error: Backend hasn't responded in 30 seconds! Reconnecting.");
     if (Capnp.enableVerboseDebugLogging) Capnp.enableVerboseDebugLogging(true);
     sandstormBackendConnection.close();
     sandstormBackendConnection = Capnp.connect(backendAddress, sandstormCoreFactory);
@@ -181,14 +177,14 @@ Meteor.setInterval(() => {
     backendHealthy = true;
     if (Capnp.enableVerboseDebugLogging) Capnp.enableVerboseDebugLogging(false);
   }, (err) => {
-    console.error('error: Backend ping threw error!', err.stack);
+    console.error("error: Backend ping threw error!", err.stack);
     // The connection will be remade on the next interval. Note that we do NOT normally observe
     // exceptions being thrown for this problem; we see the connection simply stop responding.
     // So we don't expect this branch to execute in any case.
   });
 
   if (debugLog) {
-    console.log('capnp.js: outer promise:', promise);
+    console.log("capnp.js: outer promise:", promise);
   }
 }, 30000);
 
@@ -238,21 +234,21 @@ Meteor.methods({
     check(identityId, String);
 
     if (!this.userId) {
-      throw new Meteor.Error(403, 'Unauthorized', 'Must be logged in to create grains.');
+      throw new Meteor.Error(403, "Unauthorized", "Must be logged in to create grains.");
     }
 
     if (!globalDb.userHasIdentity(this.userId, identityId)) {
-      throw new Meteor.Error(403, 'Current user does not own the identity: ' + identityId);
+      throw new Meteor.Error(403, "Current user does not own the identity: " + identityId);
     }
 
     if (!isSignedUpOrDemo()) {
-      throw new Meteor.Error(403, 'Unauthorized',
-                             'Only invited users or demo users can create grains.');
+      throw new Meteor.Error(403, "Unauthorized",
+                             "Only invited users or demo users can create grains.");
     }
 
     if (isUserOverQuota(Meteor.user())) {
       throw new Meteor.Error(402,
-          'You are out of storage space. Please delete some things and try again.');
+          "You are out of storage space. Please delete some things and try again.");
     }
 
     let pkg = Packages.findOne(packageId);
@@ -264,7 +260,7 @@ Meteor.methods({
     }
 
     if (!pkg) {
-      throw new Meteor.Error(404, 'Not Found', 'No such package is installed.');
+      throw new Meteor.Error(404, "Not Found", "No such package is installed.");
     }
 
     const appId = pkg.appId;
@@ -295,17 +291,27 @@ Meteor.methods({
     check(cachedSalt, Match.OneOf(undefined, null, String));
 
     if (this.userId && identityId && !globalDb.userHasIdentity(this.userId, identityId)) {
-      throw new Meteor.Error(403, 'Current user does not own the identity: ' + identityId);
+      throw new Meteor.Error(403, "Current user does not own the identity: " + identityId);
+    }
+
+    if (!Grains.findOne({ _id: grainId })) {
+      throw new Meteor.Error(404, "Grain not found", "Grain ID: " + grainId);
     }
 
     const db = this.connection.sandstormDb;
     check(cachedSalt, Match.OneOf(undefined, null, String));
     if (!SandstormPermissions.mayOpenGrain(db,
-                                           {grain: {_id: grainId, identityId: identityId}})) {
-      throw new Meteor.Error(403, 'Unauthorized', 'User is not authorized to open this grain.');
+                                           { grain: { _id: grainId, identityId: identityId } })) {
+      throw new Meteor.Error(403, "Unauthorized", "User is not authorized to open this grain.");
     }
 
-    return globalBackend.openSessionInternal(grainId, this.userId, identityId, null, null, cachedSalt);
+    const opened = globalBackend.openSessionInternal(grainId, this.userId, identityId,
+                                                     null, null, cachedSalt);
+    const result = opened.methodResult;
+    const proxy = new Proxy(grainId, this.userId, result.sessionId,
+                            result.hostId, result.tabId, identityId, false, opened.supervisor);
+    proxiesByHostId[result.hostId] = proxy;
+    return result;
   },
 
   openSessionFromApiToken(params, identityId, cachedSalt) {
@@ -320,17 +326,22 @@ Meteor.methods({
     check(cachedSalt, Match.OneOf(undefined, null, String));
 
     if (this.userId && identityId && !globalDb.userHasIdentity(this.userId, identityId)) {
-      throw new Meteor.Error(403, 'Current user does not own the identity: ' + identityId);
+      throw new Meteor.Error(403, "Current user does not own the identity: " + identityId);
+    }
+
+    if (!identityId && globalDb.getOrganizationDisallowGuests()) {
+      throw new Meteor.Error("guestDisallowed", "This Sandstorm server does not allow " +
+        "guests or anonymous users");
     }
 
     const token = params.token;
     const incognito = params.incognito;
-    const hashedToken = Crypto.createHash('sha256').update(token).digest('base64');
+    const hashedToken = Crypto.createHash("sha256").update(token).digest("base64");
     const apiToken = ApiTokens.findOne(hashedToken);
     validateWebkey(apiToken);
-    const grain = Grains.findOne({_id: apiToken.grainId});
+    const grain = Grains.findOne({ _id: apiToken.grainId });
     if (!grain) {
-      throw new Meteor.Error(404, 'Grain not found', 'Grain ID: ' + apiToken.grainId);
+      throw new Meteor.Error(404, "Grain not found", "Grain ID: " + apiToken.grainId);
     }
 
     if (apiToken.accountId) {
@@ -344,27 +355,27 @@ Meteor.methods({
       const sharerToken = apiToken.identityId &&
           ApiTokens.findOne({
             grainId: apiToken.grainId,
-            'owner.user.identityId': apiToken.identityId,
+            "owner.user.identityId": apiToken.identityId,
           }, {
             sort: {
-              'owner.user.lastUsed': -1,
+              lastUsed: -1,
             },
           });
       if (sharerToken) {
         title = sharerToken.owner.user.title;
       } else {
-        title = 'shared grain';
+        title = "shared grain";
       }
     }
 
     if (this.userId && !incognito) {
       if (identityId != apiToken.identityId && identityId != grain.identityId &&
-          !ApiTokens.findOne({'owner.user.identityId': identityId, parentToken: hashedToken })) {
-        const owner = {user: {identityId: identityId, title: title}};
+          !ApiTokens.findOne({ "owner.user.identityId": identityId, parentToken: hashedToken })) {
+        const owner = { user: { identityId: identityId, title: title } };
 
         // Create a new API token for the identity redeeming this token.
         const result = SandstormPermissions.createNewApiToken(
-          globalDb, {rawParentToken: token}, apiToken.grainId, apiToken.petname, {allAccess: null}, owner);
+          globalDb, { rawParentToken: token }, apiToken.grainId, apiToken.petname, { allAccess: null }, owner);
         globalDb.addContact(apiToken.accountId, identityId);
 
         // If the parent API token is forSharing and it has an accountId, then the logged-in user (call
@@ -380,14 +391,22 @@ Meteor.methods({
         }
       }
 
-      return {redirectToGrain: apiToken.grainId};
+      return { redirectToGrain: apiToken.grainId };
     } else {
-      if (!SandstormPermissions.mayOpenGrain(globalDb, {token: apiToken})) {
-        throw new Meteor.Error(403, 'Unauthorized',
-                               'User is not authorized to open this grain.');
+      if (!SandstormPermissions.mayOpenGrain(globalDb, { token: apiToken })) {
+        throw new Meteor.Error(403, "Unauthorized",
+                               "User is not authorized to open this grain.");
       }
 
-      return globalBackend.openSessionInternal(apiToken.grainId, null, null, title, apiToken, cachedSalt);
+      const opened = globalBackend.openSessionInternal(apiToken.grainId, null, null,
+                                                       title, apiToken, cachedSalt);
+
+      const result = opened.methodResult;
+      const proxy = new Proxy(apiToken.grainId, grain.userId, result.sessionId,
+                              result.hostId, result.tabId, identityId, false);
+      proxy.apiToken = apiToken;
+      proxiesByHostId[result.hostId] = proxy;
+      return result;
     }
   },
 
@@ -397,21 +416,27 @@ Meteor.methods({
     check(sessionId, String);
 
     const session = Sessions.findAndModify({
-      query: {_id: sessionId},
-      update: {$set: {timestamp: new Date().getTime()}},
-      fields: {grainId: 1},
+      query: { _id: sessionId },
+      update: { $set: { timestamp: new Date().getTime() } },
+      fields: { grainId: 1, identityId: 1, hostId: 1 },
     });
 
     if (session) {
       // Session still present in database, so send keep-alive to backend.
       try {
         const grainId = session.grainId;
-        waitPromise(globalBackend.openGrain(grainId, false).supervisor.keepAlive());
+        const hostId = session.hostId;
+        let supervisor = proxiesByHostId[hostId] && proxiesByHostId[hostId].supervisor;
+        if (!supervisor) {
+          supervisor = globalBackend.continueGrain(grainId).supervisor;
+        }
+
+        waitPromise(supervisor.keepAlive());
         globalBackend.updateLastActive(grainId, this.userId, session.identityId);
       } catch (err) {
         // Ignore disconnects, which imply that the grain shut down already. It'll start back up on
         // the next request, so whatever.
-        if (err.kjType !== 'disconnected') {
+        if (err.kjType !== "disconnected") {
           throw err;
         }
       }
@@ -426,7 +451,7 @@ Meteor.methods({
     check(grainId, String);
     const grain = Grains.findOne(grainId);
     if (!grain || !this.userId || grain.userId !== this.userId) {
-      throw new Meteor.Error(403, 'Unauthorized', 'User is not the owner of this grain');
+      throw new Meteor.Error(403, "Unauthorized", "User is not the owner of this grain");
     }
 
     waitPromise(globalBackend.shutdownGrain(grainId, grain.userId, true));
@@ -439,34 +464,34 @@ const validateWebkey = (apiToken, refreshedExpiration) => {
   // `expiresIfUnused` field is reset to `refreshedExpiration`.
 
   if (!apiToken) {
-    throw new Meteor.Error(403, 'Invalid authorization token');
+    throw new Meteor.Error(403, "Invalid authorization token");
   }
 
   if (apiToken.revoked) {
-    throw new Meteor.Error(403, 'Authorization token has been revoked');
+    throw new Meteor.Error(403, "Authorization token has been revoked");
   }
 
-  if (apiToken.owner && !('webkey' in apiToken.owner)) {
-    throw new Meteor.Error(403, 'Unauthorized to open non-webkey token.');
+  if (apiToken.owner && !("webkey" in apiToken.owner)) {
+    throw new Meteor.Error(403, "Unauthorized to open non-webkey token.");
   }
 
   if (apiToken.expires && apiToken.expires.getTime() <= Date.now()) {
-    throw new Meteor.Error(403, 'Authorization token expired');
+    throw new Meteor.Error(403, "Authorization token expired");
   }
 
   if (apiToken.expiresIfUnused) {
     if (apiToken.expiresIfUnused.getTime() <= Date.now()) {
-      throw new Meteor.Error(403, 'Authorization token expired');
+      throw new Meteor.Error(403, "Authorization token expired");
     } else if (refreshedExpiration) {
-      ApiTokens.update(apiToken._id, {$set: {expiresIfUnused: refreshedExpiration}});
+      ApiTokens.update(apiToken._id, { $set: { expiresIfUnused: refreshedExpiration } });
     } else {
       // It's getting used now, so clear the expiresIfUnused field.
-      ApiTokens.update(apiToken._id, {$set: {expiresIfUnused: null}});
+      ApiTokens.update(apiToken._id, { $set: { expiresIfUnused: null } });
     }
   }
 
   if (apiToken.objectId || apiToken.frontendRef) {
-    throw new Meteor.Error(403, 'ApiToken refers to a non-webview Capability.');
+    throw new Meteor.Error(403, "ApiToken refers to a non-webview Capability.");
   }
 };
 
@@ -488,7 +513,7 @@ getGrainSize = (supervisor, oldSize) => {
 
 Meteor.startup(() => {
   const shutdownApp = (appId) => {
-    Grains.find({appId: appId}).forEach((grain) => {
+    Grains.find({ appId: appId }).forEach((grain) => {
       waitPromise(globalBackend.shutdownGrain(grain._id, grain.userId));
     });
   };
@@ -521,7 +546,7 @@ Meteor.startup(() => {
 const TIMEOUT_MS = 180000;
 const gcSessions = () => {
   const now = new Date().getTime();
-  Sessions.remove({timestamp: {$lt: (now - TIMEOUT_MS)}});
+  Sessions.remove({ timestamp: { $lt: (now - TIMEOUT_MS) } });
 };
 
 SandstormDb.periodicCleanup(TIMEOUT_MS, gcSessions);
@@ -542,20 +567,20 @@ const getProxyForHostId = (hostId, isAlreadyOpened) => {
       proxiesByHostId[hostId] = null;
 
       return inMeteor(() => {
-        const session = Sessions.findOne({hostId: hostId});
+        const session = Sessions.findOne({ hostId: hostId });
         if (!session) {
           if (isAlreadyOpened) {
             return new Promise((resolve, reject) => {
               let observer;
               const task = Meteor.setTimeout(() => {
                 observer.stop();
-                reject(new Meteor.Error(504, 'Requested session that no longer exists, and ' +
-                    'timed out waiting for client to restore it. This can happen if you have ' +
-                    'opened an app\'s content in a new window and then closed it in the ' +
-                    'UI. If you see this error *inside* the Sandstorm UI, please report a ' +
-                    'bug and describe the circumstances of the error.'));
+                reject(new Meteor.Error(504, "Requested session that no longer exists, and " +
+                    "timed out waiting for client to restore it. This can happen if you have " +
+                    "opened an app's content in a new window and then closed it in the " +
+                    "UI. If you see this error *inside* the Sandstorm UI, please report a " +
+                    "bug and describe the circumstances of the error."));
               }, SESSION_PROXY_TIMEOUT);
-              observer = Sessions.find({hostId: hostId}).observe({
+              observer = Sessions.find({ hostId: hostId }).observe({
                 added() {
                   observer.stop();
                   Meteor.clearTimeout(task);
@@ -571,24 +596,25 @@ const getProxyForHostId = (hostId, isAlreadyOpened) => {
 
         let apiToken;
         if (session.hashedToken) {
-          apiToken = ApiTokens.findOne({_id: session.hashedToken});
+          apiToken = ApiTokens.findOne({ _id: session.hashedToken });
           // We don't have to fully validate the API token here because if it changed the session
           // would have been deleted.
           if (!apiToken) {
-            throw new Meteor.Error(410, 'ApiToken has been deleted');
+            throw new Meteor.Error(410, "ApiToken has been deleted");
           }
         }
 
         const grain = Grains.findOne(session.grainId);
         if (!grain) {
           // Grain was deleted, I guess.
-          throw new Meteor.Error(410, 'Resource has been deleted');
+          throw new Meteor.Error(410, "Resource has been deleted");
         }
 
         // Note that we don't need to call mayOpenGrain() because the existence of a session
         // implies this check was already performed.
 
-        const proxy = new Proxy(grain._id, grain.userId, session._id, hostId, session.identityId, false);
+        const proxy = new Proxy(grain._id, grain.userId, session._id, hostId, session.tabId,
+                                session.identityId, false);
         if (apiToken) proxy.apiToken = apiToken;
 
         // Only add the proxy to the table if it was not concurrently deleted (which could happen
@@ -596,7 +622,7 @@ const getProxyForHostId = (hostId, isAlreadyOpened) => {
         if (hostId in proxiesByHostId) {
           proxiesByHostId[hostId] = proxy;
         } else {
-          throw new Meteor.Error(403, 'Session was concurrently closed.');
+          throw new Meteor.Error(403, "Session was concurrently closed.");
         }
 
         return proxy;
@@ -608,109 +634,203 @@ const getProxyForHostId = (hostId, isAlreadyOpened) => {
 // =======================================================================================
 // API tokens
 
-const proxiesByApiToken = {};
+class ApiSessionProxies {
+  // Class that caches proxies for requests that come in through HTTP API endpoints. Such
+  // requests are not associated with any entry in the `Sessions` collection, so we need
+  // some other means of detecting unused proxies and closing them. This class works by keeping
+  // the proxies in two buckets. When a proxy is used, it is put in the new bucket. Periodically,
+  // the old bucket is emptied and the contents of new bucket are moved to the old bucket.
+  //
+  // Each bucket is a two-level map, keyed by hashes of the tokens and their `ApiSession.Params`
+  // structs.
+
+  constructor(intervalMillis) {
+    check(intervalMillis, Number);
+    this.newBucket = {};
+    this.oldBucket = {};
+    this.interval = Meteor.setInterval(() => {
+      for (const oldHashedToken in this.oldBucket) {
+        for (const oldHashedParams in this.oldBucket[oldHashedToken]) {
+          const newProxy = this.newBucket[oldHashedToken] &&
+                this.newBucket[oldHashedToken][oldHashedParams];
+          const oldProxy = this.oldBucket[oldHashedToken][oldHashedParams];
+          if (oldProxy && !newProxy) {
+            if (Object.keys(oldProxy.websockets).length > 0) {
+              // A client has an open websocket. Keep the proxy around.
+              this.put(oldHashedToken, oldHashedParams, oldProxy);
+            } else {
+              // We can close this proxy and forget about it.
+              oldProxy.close();
+            }
+          }
+        }
+      }
+
+      this.oldBucket = this.newBucket;
+      this.newBucket = {};
+    }, intervalMillis);
+  }
+
+  get(hashedToken, hashedParams) {
+    if (this.newBucket[hashedToken] && this.newBucket[hashedToken][hashedParams]) {
+      return this.newBucket[hashedToken][hashedParams];
+    } else if (this.oldBucket[hashedToken] && this.oldBucket[hashedToken][hashedParams]) {
+      const proxy = this.oldBucket[hashedToken][hashedParams];
+      delete this.oldBucket[hashedToken][hashedParams];
+      this.put(hashedToken, hashedParams, proxy);
+      return proxy;
+    } else {
+      return null;
+    }
+  }
+
+  put(hashedToken, hashedParams, proxy) {
+    if (!this.newBucket[hashedToken]) {
+      this.newBucket[hashedToken] = {};
+    }
+
+    this.newBucket[hashedToken][hashedParams] = proxy;
+  }
+
+  removeProxiesOfToken(hashedToken) {
+    if (hashedToken in this.oldBucket) {
+      for (const hashedParams in this.oldBucket[hashedToken]) {
+        this.oldBucket[hashedToken][hashedParams].close();
+      }
+
+      delete this.oldBucket[hashedToken];
+    }
+
+    if (hashedToken in this.newBucket) {
+      for (const hashedParams in this.newBucket[hashedToken]) {
+        this.newBucket[hashedToken][hashedParams].close();
+      }
+
+      delete this.newBucket[hashedToken];
+    }
+  }
+}
+
+const apiSessionProxies = new ApiSessionProxies(3 * 60 * 1000);
 
 Meteor.startup(() => {
-  const clearSessionsAndProxies = (token) => {
-    // Clears all sessions and API proxies associated with `token` or any token that is downstream
-    // in the sharing graph.
-    // TODO(soon): Only clear sessions and proxies for which the permissions have changed.
-    const downstream = SandstormPermissions.downstreamTokens(globalDb, {token: token});
-    downstream.push(token);
-    const identityIds = [];
-    const tokenIds = [];
-
-    downstream.forEach((token) => {
-      const proxy = proxiesByApiToken[token._id];
-      if (proxy) {
-        proxy.close();
-      }
-
-      delete proxiesByApiToken[token._id];
-      tokenIds.push(token._id);
-      if (token.owner && token.owner.user) {
-        identityIds.push(token.owner.user.identityId);
-      }
-    });
-
-    Sessions.find({
-      grainId: token.grainId,
-      $or: [{identityId: {$in: identityIds}},
-        {hashedToken: {$in: tokenIds}},
-      ],
-    }, {
-      fields: {hostId: 1},
-    }).forEach((session) => {
-      const proxy = proxiesByHostId[session.hostId];
-      if (proxy) {
-        proxy.close();
-      }
-
-      delete proxiesByHostId[session.hostId];
-    });
-
-    Sessions.remove({
-      grainId: token.grainId,
-      $or: [
-        {identityId: {$in: identityIds}},
-        {hashedToken: {$in: tokenIds}},
-      ],
-    });
-  };
-
   Grains.find().observe({
     changed(newGrain, oldGrain) {
       if (oldGrain.private != newGrain.private) {
-        Sessions.remove({grainId: oldGrain._id, identityId: {$ne: oldGrain.identityId}});
-        ApiTokens.find({grainId: oldGrain._id}).forEach((apiToken) => {
-          delete proxiesByApiToken[apiToken._id];
+        Sessions.remove({ grainId: oldGrain._id, identityId: { $ne: oldGrain.identityId } });
+        ApiTokens.find({ grainId: oldGrain._id }).forEach((apiToken) => {
+          apiSessionProxies.removeProxiesOfToken(apiToken._id);
         });
       }
     },
   });
-
-  ApiTokens.find({grainId: {$exists: true}, objectId: {$exists: false}}).observe({
-    added(newApiToken) {
-      // TODO(soon): Unfortunately, added() gets called for all existing role assignments when the
-      //   front-end restarts, meaning clearing sessions here will cause people's views to refresh
-      //   on server upgrade, which is not a nice user experience. It's also sad to force-refresh
-      //   people when they gained new permissions since they might be in the middle of something,
-      //   and it's not strictly necessary for security. OTOH, it's sad to be non-reactive. Maybe
-      //   we should notify people that they have new permissions and let them click a thing to
-      //   refresh?
-      //clearSessions(roleAssignment.grainId, roleAssignment.recipient);
-      //clearApiProxies(roleAssignment.grainId);
-    },
-
-    changed(newApiToken, oldApiToken) {
-      if (!_.isEqual(newApiToken.roleAssignment, oldApiToken.roleAssignment) ||
-          !_.isEqual(newApiToken.revoked, oldApiToken.revoked)) {
-        clearSessionsAndProxies(newApiToken);
-      }
-    },
-
-    removed(oldApiToken) {
-      clearSessionsAndProxies(oldApiToken);
-    },
-  });
 });
 
+function getApiSessionParams(request) {
+  const params = {};
+  if ("x-sandstorm-passthrough" in request.headers) {
+    const optIns = request.headers["x-sandstorm-passthrough"]
+          .split(",")
+          .map((s) => { return s.trim(); });
+    // The only currently supported passthrough value is 'address', but others could be useful in
+    // the future.
+
+    if (optIns.indexOf("address") !== -1) {
+      // Sadly, we can't use request.socket.remoteFamily because it's not available in the
+      // (rather-old) version of node that comes in the Meteor bundle we're using. Hence this
+      // hackery.
+      let addressToPass = request.socket.remoteAddress;
+      if (isRfc1918OrLocal(addressToPass) && "x-real-ip" in request.headers) {
+        // Allow overriding the socket's remote address with X-Real-IP header if the request comes
+        // from either localhost or an RFC1918 address. These are not useful for geolocation anyway.
+        addressToPass = request.headers["x-real-ip"];
+      }
+
+      if (Net.isIPv4(addressToPass)) {
+        // Map IPv4 addresses in IPv6.
+        // This conveniently comes out to a 48-bit number, which is precisely representable in a
+        // double (which has 53 mantissa bits). Thus we can avoid using Bignum/strings, which we
+        // might otherwise need to precisely represent 64-bit fields.
+        const v4Int = 0xFFFF00000000 + addressToPass.split(".")
+              .map((x) => { return parseInt(x, 10); })
+              .reduce((a, b) => { return (256 * a) + b; });
+        params.remoteAddress = {
+          lower64: v4Int,
+          upper64: 0,
+        };
+      } else if (Net.isIPv6(addressToPass)) {
+        // TODO(test): Unit test this
+        // Parse a valid v6 address.
+        // Split into groups, then insert an appropriate number of 0's if :: was used.
+        const groups = addressToPass.split(":");
+
+        // Strip extra empty group in the case of a leading or trailing '::'.
+        if (groups[0] === "") {
+          groups.shift();
+        }
+
+        if (groups[groups.length - 1] === "") {
+          groups.pop();
+        }
+
+        const lastGroup = groups[groups.length - 1];
+        // Handle IPv4-mapped IPv6 addresses.  These end in a dotted-quad IPv4 address, which we
+        // should expand into two groups of 4-character hex strings, like the rest of the address.
+        if (Net.isIPv4(lastGroup)) {
+          groups.pop();
+          const quad = lastGroup.split(".").map((x) => { return parseInt(x, 10); });
+          groups.push(((quad[0] * 256) + quad[1]).toString(16));
+          groups.push(((quad[2] * 256) + quad[3]).toString(16));
+        }
+
+        const groupsToAdd = 8 - groups.length;
+        const emptyGroupIndex = groups.indexOf("");
+        let cleanGroups;
+        if (emptyGroupIndex !== -1) {
+          const head = groups.slice(0, emptyGroupIndex);
+          // groupsToAdd + 1 because we sliced out the empty element
+          const mid = Array(groupsToAdd + 1);
+          for (let i = 0; i < groupsToAdd + 1; i++) {
+            mid[i] = "0";
+          }
+
+          const tail = groups.slice(emptyGroupIndex + 1, groups.length);
+          cleanGroups = [].concat(head, mid, tail);
+        } else {
+          cleanGroups = groups;
+        }
+
+        const ints = cleanGroups.map((x) => { return parseInt(x, 16); });
+        // We use strings because we'd lose data from loss of precision casting the 64-bit uints
+        // into 53-bit-mantissa doubles.
+        params.remoteAddress = {
+          upper64: quadToIntString(ints.slice(0, 4)),
+          lower64: quadToIntString(ints.slice(4, 8)),
+        };
+      }
+    }
+  }
+
+  return Capnp.serialize(ApiSession.Params, params);
+}
+
 // Used by server/drivers/external-ui/view.js
-getProxyForApiToken = (token) => {
+getProxyForApiToken = (token, request) => {
   check(token, String);
-  const hashedToken = Crypto.createHash('sha256').update(token).digest('base64');
+  const hashedToken = Crypto.createHash("sha256").update(token).digest("base64");
+  const tabId = Crypto.createHash("sha256").update("tab:").update(hashedToken)
+      .digest("hex").slice(0, 32);
+  const serializedParams = getApiSessionParams(request);
+  const hashedParams = Crypto.createHash("sha256").update(serializedParams).digest("base64");
   return Promise.resolve(undefined).then(() => {
-    const proxy = proxiesByApiToken[hashedToken];
+    const proxy = apiSessionProxies.get(hashedToken, hashedParams);
     if (proxy) {
       if (proxy.expires && proxy.expires.getTime() <= Date.now()) {
-        throw new Meteor.Error(403, 'Authorization token expired');
+        throw new Meteor.Error(403, "Authorization token expired");
       }
 
       return proxy;
     } else {
-      // Set table entry to null for now so that we can detect if it is concurrently deleted.
-      proxiesByApiToken[hashedToken] = null;
-
       return inMeteor(() => {
         const tokenInfo = ApiTokens.findOne(hashedToken);
         validateWebkey(tokenInfo);
@@ -718,38 +838,33 @@ getProxyForApiToken = (token) => {
         const grain = Grains.findOne(tokenInfo.grainId);
         if (!grain) {
           // Grain was deleted, I guess.
-          throw new Meteor.Error(410, 'Resource has been deleted');
+          throw new Meteor.Error(410, "Resource has been deleted");
         }
 
         let proxy;
         if (tokenInfo.userInfo) {
-          throw new Error('API tokens created with arbitrary userInfo no longer supported');
+          throw new Error("API tokens created with arbitrary userInfo no longer supported");
         } else {
           let identityId = null;
           if (tokenInfo.identityId && !tokenInfo.forSharing) {
             identityId = tokenInfo.identityId;
           }
 
-          proxy = new Proxy(tokenInfo.grainId, grain.userId, null, null, identityId, true);
+          proxy = new Proxy(tokenInfo.grainId, grain.userId, null, null, tabId, identityId, true);
           proxy.apiToken = tokenInfo;
+          proxy.apiSessionParams = serializedParams;
         }
 
-        if (!SandstormPermissions.mayOpenGrain(globalDb, {token: tokenInfo})) {
+        if (!SandstormPermissions.mayOpenGrain(globalDb, { token: tokenInfo })) {
           // Note that only public grains may be opened without a user ID.
-          throw new Meteor.Error(403, 'Unauthorized.');
+          throw new Meteor.Error(403, "Unauthorized.");
         }
 
         if (tokenInfo.expires) {
           proxy.expires = tokenInfo.expires;
         }
 
-        // Only add the proxy to the table if it was not concurrently deleted (which could happen
-        // e.g. if the token was revoked).
-        if (hashedToken in proxiesByApiToken) {
-          proxiesByApiToken[hashedToken] = proxy;
-        } else {
-          throw new Meteor.Error(403, 'Token was concurrently revoked.');
-        }
+        apiSessionProxies.put(hashedToken, hashedParams, proxy);
 
         return proxy;
       });
@@ -757,22 +872,53 @@ getProxyForApiToken = (token) => {
   });
 };
 
-const apiUseBasicAuth = (req) => {
-  // For clients with no convenient way to add an 'Authorization: Bearer' header, we allow the token
-  // to be transmitted as a basic auth password.
-  const agent = req.headers['user-agent'];
+const apiUseBasicAuth = (req, hostId) => {
+  // If the request was to a token-specific host *and* the request has no Origin header (meaning
+  // it is not an XHR from a web site), then we permit the use of HTTP basic auth. The reason we
+  // prohibit XHRs is because we want to discourage people from using basic auth in a browser,
+  // because the browser will cache the credentials, which exposes the hostname to XSRF attack
+  // (which is mostly, but not completely, mitigated by the unguessable hostname). The reason we
+  // want to allow basic auth at all is because a lot of existing client apps support only basic
+  // auth. New clients and web-based clients should use `Authorization: bearer <token>` instead.
+  if (globalDb.isTokenSpecificHostId(hostId) && !req.headers.origin) {
+    return true;
+  }
+
+  // Historically, all API tokens were served from the same host rather than have token-specific
+  // hosts. In this model, basic auth in browsers was far more dangerous since the hostname was
+  // not a secret -- in fact, even benign attempts to use two APIs on the same server from the same
+  // browser could interfere if using basic auth. Hence, basic auth was prohibited except when
+  // coming from certain whitelisted clients known not to be browsers, e.g. Mirall, the ownCloud
+  // client app.
+  //
+  // Since many clients in the wild have already been configured to use the shared API host, we
+  // must continue to support them, so this logic remains.
+  const agent = req.headers["user-agent"];
   return agent.match(BASIC_AUTH_USER_AGENTS_REGEX);
 };
 
-const apiTokenForRequest = (req) => {
+const apiTokenForRequest = (req, hostId) => {
+  // Extract the API token from the request.
+
   const auth = req.headers.authorization;
-  if (auth && auth.slice(0, 7).toLowerCase() === 'bearer ') {
-    return auth.slice(7).trim();
-  } else if (auth && auth.slice(0, 6).toLowerCase() === 'basic ' && apiUseBasicAuth(req)) {
-    return (new Buffer(auth.slice(6).trim(), 'base64')).toString().split(':')[1];
+  let token;
+  if (auth && auth.slice(0, 7).toLowerCase() === "bearer ") {
+    token = auth.slice(7).trim();
+  } else if (auth && auth.slice(0, 6).toLowerCase() === "basic " &&
+             apiUseBasicAuth(req, hostId)) {
+    token = (new Buffer(auth.slice(6).trim(), "base64")).toString().split(":")[1];
   } else {
-    return undefined;
+    token = undefined;
   }
+
+  if (token && hostId !== "api") {
+    // Verify that the token matches the specific host.
+    if (hostId !== globalDb.apiHostIdForToken(token)) {
+      token = undefined;
+    }
+  }
+
+  return token;
 };
 
 // =======================================================================================
@@ -786,10 +932,10 @@ tryProxyUpgrade = (hostId, req, socket, head) => {
   // should consider other host types, like static web publishing), or throws an error if the
   // request is definitely invalid.
 
-  if (hostId === 'api') {
-    const token = apiTokenForRequest(req);
+  if (globalDb.isApiHostId(hostId)) {
+    const token = apiTokenForRequest(req, hostId);
     if (token) {
-      return getProxyForApiToken(token).then((proxy) => {
+      return getProxyForApiToken(token, req).then((proxy) => {
         // Meteor sets the timeout to five seconds. Change that back to two
         // minutes, which is the default value.
         socket.setTimeout(120000);
@@ -801,13 +947,13 @@ tryProxyUpgrade = (hostId, req, socket, head) => {
       return Promise.resolve(false);
     }
   } else {
-    const isAlreadyOpened = req.headers.cookie && req.headers.cookie.indexOf('sandstorm-sid=') !== -1;
+    const isAlreadyOpened = req.headers.cookie && req.headers.cookie.indexOf("sandstorm-sid=") !== -1;
     return getProxyForHostId(hostId, isAlreadyOpened).then((proxy) => {
       if (proxy) {
         // Cross-origin requests are not allowed on UI session hosts.
         const origin = req.headers.origin;
-        if (origin !== (PROTOCOL + '//' + req.headers.host)) {
-          throw new Meteor.Error(403, 'Detected illegal cross-origin WebSocket from: ' + origin);
+        if (origin !== (PROTOCOL + "//" + req.headers.host)) {
+          throw new Meteor.Error(403, "Detected illegal cross-origin WebSocket from: " + origin);
         }
 
         // Meteor sets the timeout to five seconds. Change that back to two
@@ -830,12 +976,13 @@ tryProxyRequest = (hostId, req, res) => {
   // should consider other host types, like static web publishing), or throws an error if the
   // request is definitely invalid.
 
-  if (hostId === 'api') {
+  const hostIdHash = globalDb.isApiHostId(hostId);
+  if (hostIdHash) {
     // This is a request for the API host.
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader("Access-Control-Allow-Origin", "*");
 
-    if (req.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
       // Reply to CORS preflight request.
 
       // All we want to do is permit APIs to be accessed from arbitrary origins. Since clients
@@ -853,21 +1000,21 @@ tryProxyRequest = (hostId, req, res) => {
       // overly complicated.
 
       const accessControlHeaders = {
-        'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE',
-        'Access-Control-Max-Age': '3600',
+        "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, PATCH, DELETE",
+        "Access-Control-Max-Age": "3600",
       };
 
       // Copy all requested headers to the allowed headers list.
-      const requestedHeaders = req.headers['access-control-request-headers'];
+      const requestedHeaders = req.headers["access-control-request-headers"];
       if (requestedHeaders) {
-        accessControlHeaders['Access-Control-Allow-Headers'] = requestedHeaders;
+        accessControlHeaders["Access-Control-Allow-Headers"] = requestedHeaders;
       }
 
       // Add the requested method to the allowed methods list, if it's not there already.
-      const requestedMethod = req.headers['access-control-request-method'];
+      const requestedMethod = req.headers["access-control-request-method"];
       if (requestedMethod &&
-          !(_.contains(['GET', 'HEAD', 'POST', 'PUT', 'DELETE'], requestedMethod))) {
-        accessControlHeaders['Access-Control-Allow-Methods'] += ', ' + requestedMethod;
+          !(_.contains(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], requestedMethod))) {
+        accessControlHeaders["Access-Control-Allow-Methods"] += ", " + requestedMethod;
       }
 
       for (header in accessControlHeaders) {
@@ -877,54 +1024,82 @@ tryProxyRequest = (hostId, req, res) => {
 
     const errorHandler = (err) => {
       if (err instanceof Meteor.Error) {
-        console.log('error: ' + err);
-        res.writeHead(err.error, err.reason, { 'Content-Type': 'text/plain' });
+        console.log("error: " + err);
+        res.writeHead(err.error, err.reason, { "Content-Type": "text/plain" });
       } else {
-        res.writeHead(500, 'Internal Server Error', { 'Content-Type': 'text/plain' });
+        res.writeHead(500, "Internal Server Error", { "Content-Type": "text/plain" });
       }
 
       res.end(err.stack);
     };
 
-    const token = apiTokenForRequest(req);
-    if (token && req.headers['x-sandstorm-token-keepalive']) {
+    const token = apiTokenForRequest(req, hostId);
+    if (token && req.headers["x-sandstorm-token-keepalive"]) {
       inMeteor(() => {
-        const keepaliveDuration = parseInt(req.headers['x-sandstorm-token-keepalive']);
+        const keepaliveDuration = parseInt(req.headers["x-sandstorm-token-keepalive"]);
         check(keepaliveDuration, Match.Integer);
-        const hashedToken = Crypto.createHash('sha256').update(token).digest('base64');
+        const hashedToken = Crypto.createHash("sha256").update(token).digest("base64");
         validateWebkey(ApiTokens.findOne(hashedToken), new Date(Date.now() + keepaliveDuration));
       }).then(() => {
         res.writeHead(200, {});
         res.end();
       }, errorHandler);
     } else if (token) {
-      getProxyForApiToken(token).then((proxy) => {
+      getProxyForApiToken(token, req).then((proxy) => {
         proxy.requestHandler(req, res);
       }, errorHandler);
-    } else if (req.method === 'OPTIONS') {
-      // OPTIONS request with no authorization token. Fine to end here.
-      res.writeHead(200, {});
-      res.end();
     } else {
-      if (apiUseBasicAuth(req)) {
-        res.writeHead(401, {
-          'Content-Type': 'text/plain',
-          'WWW-Authenticate': 'Basic realm=\'Sandstorm API\'',
-        });
-      } else {
-        // TODO(someday): Display some sort of nifty API browser.
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
-      }
+      // No token. Look up static API host info.
+      inMeteor(() => {
+        const apiHost = globalDb.collections.apiHosts.findOne(hostIdHash);
 
-      res.end('Missing or invalid authorization header.\n\n' +
-          'This address serves APIs, which allow external apps (such as a phone app) to\n' +
-          'access data on your Sandstorm server. This address is not meant to be opened\n' +
-          'in a regular browser.');
+        if (req.method === "OPTIONS") {
+          // OPTIONS request with no authorization token.
+
+          const dav = ((apiHost || {}).options || {}).dav || [];
+          if (dav.length > 0) {
+            res.setHeader("DAV", dav.join(", "));
+            res.setHeader("Access-Control-Expose-Headers", "DAV");
+          }
+
+          res.writeHead(200, {});
+          res.end();
+        } else {
+          const resources = (apiHost || {}).resources || {};
+          const path = SandstormDb.escapeMongoKey(req.url.split("?")[0]);
+          if (path in resources) {
+            // Serve a static resource.
+            const resource = resources[path];
+            console.log(path, resources, resource);
+            if (resource.language) res.setHeader("Content-Language", resource.language);
+            if (resource.encoding) res.setHeader("Content-Encoding", resource.encoding);
+            res.writeHead(200, {
+              "Content-Type": resource.type,
+            });
+            res.end(resource.body);
+          } else {
+            if (apiUseBasicAuth(req, hostId)) {
+              res.writeHead(401, {
+                "Content-Type": "text/plain",
+                "WWW-Authenticate": "Basic realm='Sandstorm API'",
+              });
+            } else {
+              // TODO(someday): Display some sort of nifty API browser.
+              res.writeHead(403, { "Content-Type": "text/plain" });
+            }
+
+            res.end("Missing or invalid authorization header.\n\n" +
+                "This address serves APIs, which allow external apps (such as a phone app) to\n" +
+                "access data on your Sandstorm server. This address is not meant to be opened\n" +
+                "in a regular browser.");
+          }
+        }
+      }).then(() => {}, errorHandler);
     }
 
     return Promise.resolve(true);
   } else {
-    const isAlreadyOpened = req.headers.cookie && req.headers.cookie.indexOf('sandstorm-sid=') !== -1;
+    const isAlreadyOpened = req.headers.cookie && req.headers.cookie.indexOf("sandstorm-sid=") !== -1;
     return getProxyForHostId(hostId, isAlreadyOpened).then((proxy) => {
       if (proxy) {
         proxy.requestHandler(req, res);
@@ -942,42 +1117,44 @@ tryProxyRequest = (hostId, req, res) => {
 // Connects to a grain and exports it on a wildcard host.
 //
 
-Proxy = class Proxy {
-  constructor(grainId, ownerId, sessionId, hostId, identityId, isApi, supervisor) {
+class Proxy {
+  constructor(grainId, ownerId, sessionId, hostId, tabId, identityId, isApi, supervisor) {
     this.grainId = grainId;
     this.ownerId = ownerId;
     this.identityId = identityId;
     this.supervisor = supervisor;  // note: optional parameter; we can reconnect
     this.sessionId = sessionId;
+    this.tabId = tabId;
     this.isApi = isApi;
     this.hasLoaded = false;
-    this.websockets = [];
+    this.websockets = {};
+    this.websocketCounter = 0; // Used for generating unique socket IDs.
     if (sessionId) {
-      if (!hostId) throw new Error('sessionId must come with hostId');
-      if (isApi) throw new Error('API proxy shouldn\'t have sessionId');
+      if (!hostId) throw new Error("sessionId must come with hostId");
+      if (isApi) throw new Error("API proxy shouldn't have sessionId");
       this.hostId = hostId;
     } else {
-      if (!isApi) throw new Error('non-API proxy requires sessionId');
-      if (hostId) throw new Error('API proxy sholudn\'t have hostId');
+      if (!isApi) throw new Error("non-API proxy requires sessionId");
+      if (hostId) throw new Error("API proxy sholudn't have hostId");
     }
 
     if (this.identityId) {
       const identity = globalDb.getIdentity(this.identityId);
       if (!identity) {
-        throw new Error('identity not found: ' + this.identityId);
+        throw new Error("identity not found: " + this.identityId);
       }
 
       this.userInfo = {
-        displayName: {defaultText: identity.profile.name},
+        displayName: { defaultText: identity.profile.name },
         preferredHandle: identity.profile.handle,
-        identityId: new Buffer(identity._id, 'hex'),
+        identityId: new Buffer(identity._id, "hex"),
       };
       if (identity.profile.pictureUrl) this.userInfo.pictureUrl = identity.profile.pictureUrl;
       if (identity.profile.pronoun) this.userInfo.pronouns = identity.profile.pronoun;
     } else {
       this.userInfo = {
-        displayName: {defaultText: 'Anonymous User'},
-        preferredHandle: 'anonymous',
+        displayName: { defaultText: "Anonymous User" },
+        preferredHandle: "anonymous",
       };
     }
 
@@ -987,15 +1164,15 @@ Proxy = class Proxy {
       if (this.sessionId) {
         // Implement /_sandstorm-init for setting the session cookie.
         const url = Url.parse(request.url, true);
-        if (url.pathname === '/_sandstorm-init' && url.query.sessionid === _this.sessionId) {
+        if (url.pathname === "/_sandstorm-init" && url.query.sessionid === _this.sessionId) {
           _this.doSessionInit(request, response, url.query.path);
           return;
         }
       }
 
       Promise.resolve(undefined).then(() => {
-        const contentLength = request.headers['content-length'];
-        if ((request.method === 'POST' || request.method === 'PUT') &&
+        const contentLength = request.headers["content-length"];
+        if ((request.method === "POST" || request.method === "PUT") &&
             (contentLength === undefined || contentLength > 1024 * 1024)) {
           // The input is either very long, or we don't know how long it is, so use streaming mode.
           return _this.handleRequestStreaming(request, response, contentLength, 0);
@@ -1009,22 +1186,22 @@ Proxy = class Proxy {
 
         let body = err.stack;
         if (err.cppFile) {
-          body += '\nC++ location:' + err.cppFile + ':' + (err.line || '??');
+          body += "\nC++ location:" + err.cppFile + ":" + (err.line || "??");
         }
 
         if (err.kjType) {
-          body += '\ntype: ' + err.kjType;
+          body += "\ntype: " + err.kjType;
         }
 
         if (response.headersSent) {
           // Unfortunately, it's too late to tell the client what happened.
-          console.error('HTTP request failed after response already sent:', body);
+          console.error("HTTP request failed after response already sent:", body);
           response.end();
         } else {
           if (err instanceof Meteor.Error) {
-            response.writeHead(err.error, err.reason, { 'Content-Type': 'text/plain' });
+            response.writeHead(err.error, err.reason, { "Content-Type": "text/plain" });
           } else {
-            response.writeHead(500, 'Internal Server Error', { 'Content-Type': 'text/plain' });
+            response.writeHead(500, "Internal Server Error", { "Content-Type": "text/plain" });
           }
 
           response.end(body);
@@ -1034,7 +1211,7 @@ Proxy = class Proxy {
 
     this.upgradeHandler = (request, socket, head) => {
       _this.handleWebSocket(request, socket, head, 0).catch((err) => {
-        console.error('WebSocket setup failed:', err.stack);
+        console.error("WebSocket setup failed:", err.stack);
         // TODO(cleanup):  Manually send back a 500 response?
         socket.destroy();
       });
@@ -1042,11 +1219,11 @@ Proxy = class Proxy {
   }
 
   close() {
-    this.websockets.forEach((socket) => {
-      socket.destroy();
-    });
+    for (const socketIdx in this.websockets) {
+      this.websockets[socketIdx].destroy();
+    };
 
-    this.websockets = [];
+    this.websockets = {};
 
     if (this.session) {
       this.session.close();
@@ -1061,6 +1238,11 @@ Proxy = class Proxy {
     if (this.supervisor) {
       this.supervisor.close();
       delete this.supervisor;
+    }
+
+    if (this.permissionsObserver) {
+      this.permissionsObserver.stop();
+      delete this.permissionsObserver;
     }
   }
 
@@ -1077,119 +1259,36 @@ Proxy = class Proxy {
 
   _callNewWebSession(request, userInfo) {
     const params = Capnp.serialize(WebSession.Params, {
-      basePath: PROTOCOL + '//' + request.headers.host,
-      userAgent: 'user-agent' in request.headers
-          ? request.headers['user-agent']
-          : 'UnknownAgent/0.0',
-      acceptableLanguages: 'accept-language' in request.headers
-          ? request.headers['accept-language'].split(',').map((s) => { return s.trim(); })
-          : ['en-US', 'en'],
+      basePath: PROTOCOL + "//" + request.headers.host,
+      userAgent: "user-agent" in request.headers
+          ? request.headers["user-agent"]
+          : "UnknownAgent/0.0",
+      acceptableLanguages: "accept-language" in request.headers
+          ? request.headers["accept-language"].split(",").map((s) => { return s.trim(); })
+          : ["en-US", "en"],
     });
     return this.uiView.newSession(userInfo,
-                                  makeHackSessionContext(this.grainId, this.sessionId, this.identityId),
-                                  WebSession.typeId, params).session;
+         makeHackSessionContext(this.grainId, this.sessionId, this.identityId, this.tabId),
+         WebSession.typeId, params, new Buffer(this.tabId, "hex")).session;
   }
 
   _callNewApiSession(request, userInfo) {
-    const _this = this;
-    const params = {};
-
-    if ('x-sandstorm-passthrough' in request.headers) {
-      const optIns = request.headers['x-sandstorm-passthrough']
-          .split(',')
-          .map((s) => { return s.trim(); });
-      // The only currently supported passthrough value is 'address', but others could be useful in
-      // the future
-      if (optIns.indexOf('address') !== -1) {
-        // Sadly, we can't use request.socket.remoteFamily because it's not available in the (rather-old)
-        // version of node that comes in the Meteor bundle we're using.  Hence this hackery.
-        let addressToPass = request.socket.remoteAddress;
-        if (isRfc1918OrLocal(addressToPass) && 'x-real-ip' in request.headers) {
-          // Allow overriding the socket's remote address with X-Real-IP header if the request comes
-          // from either localhost or an RFC1918 address.  These are not useful for geolocation
-          // anyway.
-          addressToPass = request.headers['x-real-ip'];
-        }
-
-        if (Net.isIPv4(addressToPass)) {
-          // Map IPv4 addresses in IPv6.
-          // This conveniently comes out to a 48-bit number, which is precisely representable in a
-          // double (which has 53 mantissa bits). Thus we can avoid using Bignum/strings, which we
-          // might otherwise need to precisely represent 64-bit fields.
-          const v4Int = 0xFFFF00000000 + addressToPass.split('.')
-              .map((x) => { return parseInt(x, 10); })
-              .reduce((a, b) => { return (256 * a) + b; });
-          params.remoteAddress = {
-            lower64: v4Int,
-            upper64: 0,
-          };
-        } else if (Net.isIPv6(addressToPass)) {
-          // TODO(test): Unit test this
-          // Parse a valid v6 address.
-          // Split into groups, then insert an appropriate number of 0's if :: was used.
-          const groups = addressToPass.split(':');
-
-          // Strip extra empty group in the case of a leading or trailing '::'.
-          if (groups[0] === '') {
-            groups.shift();
-          }
-
-          if (groups[groups.length - 1] === '') {
-            groups.pop();
-          }
-
-          const lastGroup = groups[groups.length - 1];
-          // Handle IPv4-mapped IPv6 addresses.  These end in a dotted-quad IPv4 address, which we
-          // should expand into two groups of 4-character hex strings, like the rest of the address.
-          if (Net.isIPv4(lastGroup)) {
-            groups.pop();
-            const quad = lastGroup.split('.').map((x) => { return parseInt(x, 10); });
-            groups.push(((quad[0] * 256) + quad[1]).toString(16));
-            groups.push(((quad[2] * 256) + quad[3]).toString(16));
-          }
-
-          const groupsToAdd = 8 - groups.length;
-          const emptyGroupIndex = groups.indexOf('');
-          let cleanGroups;
-          if (emptyGroupIndex !== -1) {
-            const head = groups.slice(0, emptyGroupIndex);
-            // groupsToAdd + 1 because we sliced out the empty element
-            const mid = Array(groupsToAdd + 1);
-            for (let i = 0; i < groupsToAdd + 1; i++) {
-              mid[i] = '0';
-            }
-
-            const tail = groups.slice(emptyGroupIndex + 1, groups.length);
-            cleanGroups = [].concat(head, mid, tail);
-          } else {
-            cleanGroups = groups;
-          }
-
-          const ints = cleanGroups.map((x) => { return parseInt(x, 16); });
-          // We use strings because we'd lose data from loss of precision casting the 64-bit uints
-          // into 53-bit-mantissa doubles.
-          params.remoteAddress = {
-            upper64: quadToIntString(ints.slice(0, 4)),
-            lower64: quadToIntString(ints.slice(4, 8)),
-          };
-        }
-      }
+    const serializedParams = this.apiSessionParams;
+    if (!serializedParams) {
+      throw new Meteor.Error(500, "Should have already computed apiSessionParams.");
     }
-
-    const serializedParams = Capnp.serialize(ApiSession.Params, params);
 
     // TODO(someday): We are currently falling back to WebSession if we get any kind of error upon
     // calling newSession with an ApiSession._id.
     // Eventually we'll remove this logic once we're sure apps have updated.
     return this.uiView.newSession(userInfo,
-                                  makeHackSessionContext(this.grainId, this.sessionId, this.identityId),
-                                  ApiSession.typeId, serializedParams)
-                      .then((session) => {
-                        return session.session;
-                      }, (err) => {
-                        return _this._callNewWebSession(request, userInfo);
-                      }
-    );
+         makeHackSessionContext(this.grainId, this.sessionId, this.identityId, this.tabId),
+         ApiSession.typeId, serializedParams, new Buffer(this.tabId, "hex"))
+        .then((session) => {
+          return session.session;
+        }, (err) => {
+          return this._callNewWebSession(request, userInfo);
+        });
   };
 
   _callNewSession(request, viewInfo) {
@@ -1198,27 +1297,40 @@ Proxy = class Proxy {
     const promise = inMeteor(() => {
       let vertex;
       if (_this.apiToken) {
-        vertex = {token: _this.apiToken};
+        vertex = { token: _this.apiToken };
       } else {
         // (_this.identityId might be null; this is fine)
-        vertex = {grain: {_id: _this.grainId, identityId: _this.identityId}};
+        vertex = { grain: { _id: _this.grainId, identityId: _this.identityId } };
       }
 
-      const permissions = SandstormPermissions.grainPermissions(globalDb, vertex, viewInfo);
-      if (!permissions) {
-        throw new Meteor.Error(403, 'Unauthorized', 'User is not authorized to open this grain.');
+      let onInvalidated = function () {
+        Sessions.remove({ _id: _this.sessionId });
+      };
+
+      if (!_this.sessionId) {
+        onInvalidated = function () {
+          apiSessionProxies.removeProxiesOfToken(_this.apiToken._id);
+        };
       }
+
+      const permissions = SandstormPermissions.grainPermissions(globalDb, vertex, viewInfo,
+                                                                onInvalidated);
+      if (!permissions.permissions) {
+        throw new Meteor.Error(403, "Unauthorized", "User is not authorized to open this grain.");
+      }
+
+      _this.permissionsObserver = permissions.observeHandle;
 
       Sessions.update({
         _id: _this.sessionId,
       }, {
         $set: {
           viewInfo: viewInfo,
-          permissions: permissions,
+          permissions: permissions.permissions,
         },
       });
 
-      return permissions;
+      return permissions.permissions;
     });
 
     return promise.then((permissions) => {
@@ -1254,12 +1366,12 @@ Proxy = class Proxy {
       const _this = this;
       const promise = this.uiView.getViewInfo().then((viewInfo) => {
         return inMeteor(() => {
-          Grains.update(_this.grainId, {$set: {cachedViewInfo: viewInfo}});
+          Grains.update(_this.grainId, { $set: { cachedViewInfo: viewInfo } });
         }).then(() => {
           return _this._callNewSession(request, viewInfo);
         });
       }, (error) => {
-        if (error.kjType === 'failed' || error.kjType === 'unimplemented') {
+        if (error.kjType === "failed" || error.kjType === "unimplemented") {
           // Method not implemented.
           // TODO(apibump): Don't treat 'failed' as 'unimplemented'. Unfortunately, old apps built
           //   with old versions of Cap'n Proto don't throw 'unimplemented' exceptions, so we have
@@ -1293,7 +1405,6 @@ Proxy = class Proxy {
 
     if (this.supervisor) {
       this.supervisor.close();
-      delete globalBackend.runningGrains[this.grainId];
       delete this.supervisor;
     }
   }
@@ -1316,25 +1427,25 @@ Proxy = class Proxy {
 
   doSessionInit(request, response, requestPath) {
     // jscs:disable disallowQuotedKeysInObjects
-    const path = requestPath || '/';
+    const path = requestPath || "/";
 
     // Check that the path is relative (ie. starts with a /).
     // Also ensure that it doesn't start with 2 /, because that is interpreted as non-relative
-    if (path.lastIndexOf('/', 0) !== 0 || path.lastIndexOf('//', 0) === 0) {
-      response.writeHead(400, 'Invalid path supplied', { 'Content-Type': 'text/plain' });
-      response.end('Invalid path supplied.');
+    if (path.lastIndexOf("/", 0) !== 0 || path.lastIndexOf("//", 0) === 0) {
+      response.writeHead(400, "Invalid path supplied", { "Content-Type": "text/plain" });
+      response.end("Invalid path supplied.");
       return;
     }
 
     // Set the session ID.
-    response.setHeader('Set-Cookie', ['sandstorm-sid=', this.sessionId, '; Max-Age=31536000; HttpOnly'].join(''));
+    response.setHeader("Set-Cookie", ["sandstorm-sid=", this.sessionId, "; Max-Age=31536000; HttpOnly"].join(""));
 
-    response.setHeader('Cache-Control', 'no-cache, private');
+    response.setHeader("Cache-Control", "no-cache, private");
 
     // Redirect to the app's root URL.
     // Note:  All browsers support relative locations and the next update to HTTP/1.1 will officially
     //   make them valid.  http://tools.ietf.org/html/draft-ietf-httpbis-p2-semantics-26#page-67
-    response.writeHead(303, 'See Other', {'Location': encodeURI(path)});
+    response.writeHead(303, "See Other", { "Location": encodeURI(path) });
     response.end();
   }
 
@@ -1348,7 +1459,7 @@ Proxy = class Proxy {
     if (this.hostId) {
       const parseResult = parseCookies(request);
       if (!parseResult.sessionId || parseResult.sessionId !== this.sessionId) {
-        throw new Meteor.Error(403, 'Unauthorized');
+        throw new Meteor.Error(403, "Unauthorized");
       }
 
       if (parseResult.cookies.length > 0) {
@@ -1365,7 +1476,19 @@ Proxy = class Proxy {
 
     context.additionalHeaders = [];
     WebSession.Context.headerWhitelist.forEach((headerName) => {
-      if (request.headers[headerName]) {
+      if (headerName.endsWith("*")) {
+        const prefix = headerName.substr(0, headerName.length - 1);
+        for (const h in request.headers) {
+          if (!h.startsWith(prefix)) {
+            continue;
+          }
+
+          context.additionalHeaders.push({
+            name: h,
+            value: request.headers[h],
+          });
+        }
+      } else if (request.headers[headerName]) {
         context.additionalHeaders.push({
           name: headerName,
           value: request.headers[headerName],
@@ -1386,7 +1509,7 @@ Proxy = class Proxy {
   translateResponse(rpcResponse, response, request) {
     if (this.hostId) {
       if (rpcResponse.setCookies && rpcResponse.setCookies.length > 0) {
-        response.setHeader('Set-Cookie', rpcResponse.setCookies.map(makeSetCookieHeader));
+        response.setHeader("Set-Cookie", rpcResponse.setCookies.map(makeSetCookieHeader));
       }
 
       // TODO(security): Add a Content-Security-Policy header which:
@@ -1611,6 +1734,8 @@ Proxy = class Proxy {
         return session.post(path, requestContent(), context);
       } else if (request.method === 'PUT') {
         return session.put(path, requestContent(), context);
+      } else if (request.method === 'PATCH') {
+        return session.patch(path, requestContent(), context);
       } else if (request.method === 'DELETE') {
         return session.delete(path, context);
       } else if (request.method === 'PROPFIND') {
@@ -1637,7 +1762,19 @@ Proxy = class Proxy {
           if (options.davClass1) dav.push('1');
           if (options.davClass2) dav.push('2');
           if (options.davClass3) dav.push('3');
-          if (dav.length > 0) response.setHeader('DAV', dav.join(', '));
+          if (options.davExtensions) {
+            options.davExtensions.forEach((token) => {
+              if (token.match(/^([a-zA-Z0-9!#$%&'*+.^_`|~-]+|<[\x21-\x7E]*>)$/)) {
+                dav.push(token);
+              }
+            });
+          }
+
+          if (dav.length > 0) {
+            response.setHeader("DAV", dav.join(", "));
+            response.setHeader("Access-Control-Expose-Headers", "DAV");
+          }
+
           response.end();
           // Return no response; we already handled everything.
         }, (err) => {
@@ -1646,7 +1783,7 @@ Proxy = class Proxy {
           // Return no response; we already handled everything.
         });
       } else {
-        throw new Error('Sandstorm only supports the following methods: GET, POST, PUT, DELETE, HEAD, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK, ACL, REPORT, and OPTIONS.');
+        throw new Error('Sandstorm only supports the following methods: GET, POST, PUT, PATCH, DELETE, HEAD, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK, ACL, REPORT, and OPTIONS.');
       }
     }).then((rpcResponse) => {
       if (rpcResponse !== undefined) {  // Will be undefined for OPTIONS request.
@@ -1805,8 +1942,6 @@ Proxy = class Proxy {
       }
 
       const receiver = new WebSocketReceiver(socket);
-      // TODO(someday): do we want to make these be weak references somehow?
-      _this.websockets.push(socket);
 
       const promise = session.openWebSocket(path, context, protocols, receiver);
 
@@ -1814,7 +1949,10 @@ Proxy = class Proxy {
         promise.serverStream.sendBytes(head);
       }
 
-      pumpWebSocket(socket, promise.serverStream);
+      const socketIdx = _this.websocketCounter.toString();
+      _this.websockets[socketIdx] = socket;
+      _this.websocketCounter += 1;
+      pumpWebSocket(socket, promise.serverStream, () => { delete _this.websockets[socketIdx]; });
 
       return promise.then((response) => {
         const headers = [
@@ -1847,7 +1985,7 @@ Proxy = class Proxy {
       this.hasLoaded = true;
       const sessionId = this.sessionId;
       inMeteor(() => {
-        Sessions.update({_id: sessionId}, {$set: {hasLoaded: true}});
+        Sessions.update({ _id: sessionId }, { $set: { hasLoaded: true } });
       });
     }
   }
@@ -1893,9 +2031,9 @@ const parseCookies = (request) => {
       const equalsPos = reqCookie.indexOf('=');
       let cookie;
       if (equalsPos === -1) {
-        cookie = {key: reqCookie.trim(), value: ''};
+        cookie = { key: reqCookie.trim(), value: '' };
       } else {
-        cookie = {key: reqCookie.slice(0, equalsPos).trim(), value: reqCookie.slice(equalsPos + 1)};
+        cookie = { key: reqCookie.slice(0, equalsPos).trim(), value: reqCookie.slice(equalsPos + 1) };
       }
 
       if (cookie.key === 'sandstorm-sid') {
@@ -1926,6 +2064,10 @@ const parsePreconditionHeader = (request) => {
   }
 
   if (request.headers['if-none-match']) {
+    if (request.headers['if-none-match'].trim() === '*') {
+      return { doesntExist: null };
+    }
+
     const noneMatches = parseETagList(request.headers['if-none-match']);
     if (noneMatches.length > 0) {
       return { matchesNoneOf: noneMatches };
@@ -1970,7 +2112,7 @@ const parseAcceptHeader = (request) => {
       const acceptStr = acceptList[i];
       const tokensList = acceptStr.split(';');
 
-      const temp = {mimeType: tokensList[0].trim()};
+      const temp = { mimeType: tokensList[0].trim() };
 
       const tokensListRest = tokensList.slice(1);
       for (const j in tokensListRest) {
@@ -2063,6 +2205,7 @@ const errorCodes = {
   requestUriTooLong:     { id: 414, title: 'Request-URI Too Long' },
   unsupportedMediaType:  { id: 415, title: 'Unsupported Media Type' },
   imATeapot:             { id: 418, title: 'I\'m a teapot' },
+  unprocessableEntity:   { id: 422, title: 'Unprocessable Entity' },
 };
 
 ResponseStream = class ResponseStream {
@@ -2129,7 +2272,7 @@ WebSocketReceiver = class WebSocketReceiver {
   }
 };
 
-pumpWebSocket = (socket, rpcStream) => {
+pumpWebSocket = (socket, rpcStream, destructor) => {
   socket.on('data', (chunk) => {
     rpcStream.sendBytes(chunk).catch((err) => {
       if (err.kjType !== 'disconnected') {
@@ -2143,17 +2286,21 @@ pumpWebSocket = (socket, rpcStream) => {
   socket.on('end', (chunk) => {
     rpcStream.close();
   });
+
+  socket.on("close", () => {
+    destructor();
+  });
 };
 
 // =======================================================================================
 // Debug log access
 
-Meteor.publish('grainLog', function(grainId) {
+Meteor.publish('grainLog', function (grainId) {
   check(grainId, String);
   let id = 0;
   const grain = Grains.findOne(grainId);
   if (!grain || !this.userId || grain.userId !== this.userId) {
-    this.added('grainLog', id++, {text: 'Only the grain owner can view the debug log.'});
+    this.added('grainLog', id++, { text: 'Only the grain owner can view the debug log.' });
     this.ready();
     return;
   }
@@ -2164,7 +2311,7 @@ Meteor.publish('grainLog', function(grainId) {
   const receiver = {
     write(data) {
       connected = true;
-      _this.added('grainLog', id++, {text: data.toString('utf8')});
+      _this.added('grainLog', id++, { text: data.toString('utf8') });
     },
 
     close() {

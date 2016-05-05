@@ -242,7 +242,7 @@ DEFAULT_PORT=6080
 DEFAULT_DIR_FOR_ROOT="${OVERRIDE_SANDSTORM_DEFAULT_DIR:-/opt/sandstorm}"
 DEFAULT_DIR_FOR_NON_ROOT="${OVERRIDE_SANDSTORM_DEFAULT_DIR:-$HOME/sandstorm}"
 DEFAULT_UPDATE_CHANNEL="dev"
-DEFAULT_SERVER_USER="sandstorm"
+DEFAULT_SERVER_USER="${OVERRIDE_SANDSTORM_DEFAULT_SERVER_USER:-sandstorm}"
 SANDCATS_BASE_DOMAIN="${OVERRIDE_SANDCATS_BASE_DOMAIN:-sandcats.io}"
 ALLOW_DEV_ACCOUNTS="false"
 SANDCATS_GETCERTIFICATE="${OVERRIDE_SANDCATS_GETCERTIFICATE:-yes}"
@@ -628,15 +628,24 @@ detect_init_system() {
 }
 
 choose_install_mode() {
+  echo -n 'Sandstorm makes it easy to run web apps on your own server. '
+
   if [ "yes" = "$USE_DEFAULTS" ] ; then
     CHOSEN_INSTALL_MODE="${CHOSEN_INSTALL_MODE:-2}"  # dev server mode by default
   fi
 
-  if [ -z "${CHOSEN_INSTALL_MODE:-}" ]; then
-    echo "Sandstorm makes it easy to run web apps on your own server. You can have:"
+  if [ "no" = "${PREFER_ROOT:-}" ] ; then
     echo ""
-    echo "1. A full server with automatic setup (press enter to accept this default)"
-    echo "2. A development server, for writing apps."
+    echo "NOTE: Showing you all options, including development options, but omitting "
+    echo "      init script automation, because you chose to install without using root."
+    CHOSEN_INSTALL_MODE="${CHOSEN_INSTALL_MODE:-2}"  # dev server mode by default
+  fi
+
+  if [ -z "${CHOSEN_INSTALL_MODE:-}" ]; then
+    echo "You can have:"
+    echo ""
+    echo "1. A typical install, to use Sandstorm (press enter to accept this default)"
+    echo "2. A development server, for working on Sandstorm itself or localhost-based app development"
     echo ""
     CHOSEN_INSTALL_MODE=$(prompt "How are you going to use this Sandstorm install?" "1")
   fi
@@ -1210,7 +1219,11 @@ download_latest_bundle_and_extract_if_needed() {
   fi
 
   echo "Finding latest build for $DEFAULT_UPDATE_CHANNEL channel..."
-  BUILD=$(curl -A "$CURL_USER_AGENT" -fs "https://install.sandstorm.io/$DEFAULT_UPDATE_CHANNEL?from=0&type=install")
+  # NOTE: The type is install_v2. We use the "type" value when calculating how many people attempted
+  # to do a Sandstorm install. We had to stop using "install" because vagrant-spk happens to use
+  # &type=install during situations that we do not want to categorize as an attempt by a human to
+  # install Sandstorm.
+  BUILD=$(curl -A "$CURL_USER_AGENT" -fs "https://install.sandstorm.io/$DEFAULT_UPDATE_CHANNEL?from=0&type=install_v2")
   BUILD_DIR=sandstorm-$BUILD
 
   if [[ ! "$BUILD" =~ ^[0-9]+$ ]]; then
@@ -1342,11 +1355,16 @@ set_permissions() {
     return
   fi
 
+  local ADMIN_TOKEN_PATH=
+  if [ -e "${ADMIN_TOKEN_PATH}" ] ; then
+    ADMIN_TOKEN_PATH="var/sandstorm/adminToken"
+  fi
+
   # Set ownership of files.  We want the dirs to be root:sandstorm but the contents to be
   # sandstorm:sandstorm.
-  chown -R $SERVER_USER:$GROUP var/{log,pid,mongo} var/sandstorm/{apps,grains,downloads,adminToken}
-  chown root:$GROUP var/{log,pid,mongo,sandstorm} var/sandstorm/{apps,grains,downloads,adminToken}
-  chmod -R g=rwX,o= var/{log,pid,mongo,sandstorm} var/sandstorm/{apps,grains,downloads,adminToken}
+  chown -R $SERVER_USER:$GROUP var/{log,pid,mongo} var/sandstorm/{apps,grains,downloads} $ADMIN_TOKEN_PATH
+  chown root:$GROUP var/{log,pid,mongo,sandstorm} var/sandstorm/{apps,grains,downloads} $ADMIN_TOKEN_PATH
+  chmod -R g=rwX,o= var/{log,pid,mongo,sandstorm} var/sandstorm/{apps,grains,downloads} $ADMIN_TOKEN_PATH
 }
 
 install_sandstorm_symlinks() {
@@ -1356,15 +1374,34 @@ install_sandstorm_symlinks() {
     return
   fi
 
+  local FAILED_TO_WRITE_SYMLINK="no"
+
   # Install tools.
-  ln -sfT $PWD/sandstorm /usr/local/bin/sandstorm
-  ln -sfT $PWD/sandstorm /usr/local/bin/spk
+  ln -sfT $PWD/sandstorm /usr/local/bin/sandstorm || FAILED_TO_WRITE_SYMLINK=yes
+  ln -sfT $PWD/sandstorm /usr/local/bin/spk || FAILED_TO_WRITE_SYMLINK=yes
+
+  # If /usr/local/bin is not actually writeable, even though we are root, then bail on this for now.
+  # That can happen on e.g. CoreOS; see https://github.com/sandstorm-io/sandstorm/issues/1660
+  # the bash "-w" does not detect read-only mounts, so we use a behavior check above.
+  if [ "${FAILED_TO_WRITE_SYMLINK}" = "yes" ] ; then
+    echo ""
+    echo "*** WARNING: /usr/local/bin was not writeable. To run sandstorm or spk manually, use:"
+    echo " - $PWD/sandstorm"
+    echo " - $PWD/sandstorm spk"
+    echo ""
+    return
+  fi
+
 }
 
 ask_about_starting_at_boot() {
-  # If we already know we want to start the thing at boot, we can
-  # skip asking.
-  if [ "yes" = "${START_AT_BOOT:-}" ] ; then
+  # Starting Sandstorm at boot cannot work if we are not root by this point.
+  if [ "$CURRENTLY_UID_ZERO" != "yes" ] ; then
+    START_AT_BOOT="no"
+  fi
+
+  # If we already know if we want to start the thing at boot, we can skip asking.
+  if [ ! -z "${START_AT_BOOT:-}" ] ; then
     return
   fi
 
@@ -1379,12 +1416,6 @@ configure_start_at_boot_if_desired() {
   # If the user doesn't want us to start Sandstorm at boot, then we
   # don't run anything in this function.
   if [ "yes" != "${START_AT_BOOT:-}" ] ; then
-    return
-  fi
-
-  # Also, if we are not running as root, we do not bother with these
-  # steps.
-  if [ "yes" != "${CURRENTLY_UID_ZERO}" ] ; then
     return
   fi
 
@@ -1480,6 +1511,11 @@ __EOF__
 }
 
 generate_admin_token() {
+  # If dev accounts are enabled, the user does not need an admin token.
+  if [ "yes" = "${ALLOW_DEV_ACCOUNTS}" ] ; then
+    return
+  fi
+
   # Allow the person running the install.sh script to pre-generate an admin token, specified as an
   # environment variable, so that they can ignore the output text of install.sh.
   if [ ! -z "${ADMIN_TOKEN:-}" ] ; then
@@ -1506,8 +1542,18 @@ print_success() {
     fi
     echo "Visit this link to configure it:"
   fi
+
   echo ""
-  echo "  ${BASE_URL:-(unknown; bad config)}/admin/settings/$ADMIN_TOKEN"
+
+  # If there is an admin token at this point, print an admin token URL.  Otherwise, don't. Note that
+  # when dev accounts are enabled, it is advantageous to not print an admin token URL.
+  if [ ! -z "${ADMIN_TOKEN:-}" ] ; then
+    echo "  ${BASE_URL:-(unknown; bad config)}/setup/token/$ADMIN_TOKEN"
+  else
+    echo "  ${BASE_URL:-(unknown; bad config)}/"
+  fi
+  echo ""
+
   if [ "${SANDCATS_HTTPS_SUCCESSFUL}" = "yes" ] ; then
     echo ""
     echo "(If your browser shows you an OCSP error, wait 10 minutes for it to auto-resolve"
@@ -1536,11 +1582,27 @@ sandcats_provide_help() {
   echo "* Recover access to a domain you once registered with sandcats"
   echo ""
   echo "* Just press enter to go to the previous question."
-  DESIRED_SANDCATS_NAME=$(prompt "What Sandcats domain do you want to recover?" "none")
+  sandcats_recover_domain
+}
+
+sandcats_recover_domain() {
+  DESIRED_SANDCATS_NAME=$(prompt "What Sandcats subdomain do you want to recover?" "none")
 
   # If the user wants none of our help, then go back to registration.
   if [ "none" = "$DESIRED_SANDCATS_NAME" ] ; then
     sandcats_register_name
+    return
+  fi
+
+  # If the user gave us a hostname that contains a dot, tell them they need to re-enter it.
+  if [[ $DESIRED_SANDCATS_NAME =~ [.] ]] ; then
+    echo ""
+    echo "You entered: $DESIRED_SANDCATS_NAME"
+    echo ""
+    echo "but this function just wants the name of your subdomain, not including any dot characters."
+    echo "Please try again."
+    echo ""
+    sandcats_recover_domain
     return
   fi
 
@@ -1570,10 +1632,8 @@ sandcats_provide_help() {
       "${SANDCATS_API_BASE}/sendrecoverytoken")
 
   if [ "200" != "$HTTP_STATUS" ] ; then
-    # Print out the error, and then send the user back to the top of
-    # help.
     error "$(cat $LOG_PATH)"
-    sandcats_provide_help
+    sandcats_recover_domain
     return
   fi
 
@@ -1587,7 +1647,7 @@ sandcats_provide_help() {
   # If the token is empty, then they just hit enter; take them to the start of help.
   if [ -z "$TOKEN" ] ; then
     error "Empty tokens are not valid."
-    sandcats_provide_help
+    sandcats_recover_domain
     return
   fi
 
@@ -1617,10 +1677,7 @@ sandcats_provide_help() {
 
   if [ "200" != "$HTTP_STATUS" ] ; then
     error "$(cat $LOG_PATH)"
-    sandcats_provide_help
-    # We could have a little loop in case the user submitted a typo'd
-    # token, and let them retry, but for simplicity, we'll go back to
-    # the top of this help function.
+    sandcats_recover_domain
     return
   fi
 
@@ -1654,10 +1711,7 @@ sandcats_provide_help() {
 
   if [ "200" != "$HTTP_STATUS" ] ; then
     error "$(cat $LOG_PATH)"
-    sandcats_provide_help
-    # We could have a little loop in case the user submitted a typo'd
-    # token, and let them retry, but for simplicity, we'll go back to
-    # the top of this help function.
+    sandcats_recover_domain
     return
   fi
 

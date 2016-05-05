@@ -1,3 +1,150 @@
+### v0.161 (2016-04-29) [bugfixes]
+- API requests can now include Mercurial headers, potentially allowing a Mercurial server app.
+- You can now configure Sandstorm to accept SMTP connections on low-numbered ports, such as 25.
+- Apps that send email can now omit the "from" address and have it filled in automatically to the grain's auto-generated address. (Previously, the app had to explicitly call another method to find out this address.)
+- Rewrote permissions algorithm to support upcoming features. Should have no visible changes currently.
+- Fixed some bugs around grain renaming when a grain was received through multiple sharing links.
+- Sharing emails are now included in the per-user email send limit of 50 per day.
+- Oasis: Demo users can no longer send sharing invite emails, due to abuse.
+- Sandstorm for Work: The SAML configuration now clearly displays the entity ID used by Sandstorm.
+
+### v0.160 (2016-04-23) [bugfixes]
+- When the owner renames a grain, the change will now be visible by people with whom the grain has already been shared.
+- Sandstorm for Work: Enforce various rarely-used SAML constraints. (The important ones were already enforced.)
+- Increased timeout for wildcard host self-check to try to prevent error from displaying spurriously.
+- Hid "share access" button in cases where it doesn't work -- e.g. when the user doesn't have access or the grain doesn't exist.
+- Fixed regression causing powerbox offers of UiViews to fail (not yet used by any real app).
+- Oasis: Fixed first-grain tutorial overlay.
+
+### v0.159 (2016-04-16)
+- Sandstorm for Work: The sharing dialog auto-complete will now automatically be populated with all known members of your organization. (This can be turned off in the admin settings if the membership of your organization should be kept secret from its own members.)
+- Error messages informing the user that they need to log in as a different identity now allow the identity cards to be clicked to immediately initiate login as that identity, rather than requiring the user to use the sign-in menu manually.
+- Improved login provider first-time setup UI.
+- Updated to Meteor 1.3.x, a major Meteor update. No changes to Sandstorm, but many dependencies have changed, possibly introducing new bugs.
+- Fixed redirect loop that could happen when following a sharing link after the sharer has unlinked from their account the identity that they had used when sharing.
+- Fixed that paths marked hidden in a package's `sandstorm-pkgdef.capnp` would still appear under `spk dev` when listing the parent directory (though the paths were not actually accessible).
+- Sandstorm for Work: Fixed some cases where LDAP and SAML users were being handled incorrectly, such as when trying to auto-complete such users in the sharing dialog.
+- Oasis: Fixed subtle storage-related bug causing a small number of grains to get stuck in an unbootable state.
+- Oasis: Fixed related bug that caused grains created in the last few weeks to consume many more megabytes in a user's total storage quota than the actual size of the grain as reported in the top bar. If you feel that your total storage usage is being misreported, please try opening each of your grains created in the last three weeks to trigger a recount.
+
+### v0.158 (2016-04-08) [bugfixes]
+- Massively improved performance of `spk dev` filesystem tracing.
+- Fixed that an app's SandstormCore capability could get disconnected if the frontend restarted without restarting the app, leaving the app in a state where certain features (especially powerbox-related) did not work.
+- Fixed that clicking the clipboard button to copy an offer template would include extra whitespace on Firefox, which was especially bad when copying passwords e.g. from Davros.
+- Stop printing spurrious warning about missing iptables module that just confused everyone.
+- Sandstorm for Work: LDAP and SAML users ID cards will now show LDAP/SAML icon.
+- Oasis: Increased file descriptor limits to improve reliability.
+
+### v0.157 (2016-04-05)
+- Self-hosting: New, beautiful first-time setup wizard. (Sadly, if you already have a server, you'll never see it. But a redesign of the full admin UI is coming soon.)
+- Sandstorm for Work: Added ability to disallow sharing outside the organization, which also disallows guest accounts (since they only exist for external sharing purposes).
+
+### v0.156 (2016-04-02)
+- Sandstorm for Work: Added support for SAML login.
+- Sandstorm for Work: LDAP identities now have email addresses.
+- Sandstorm for Work: Removed the option to specify an LDAP DN pattern in favor of the search query approach. DN patterns were going to create problems for future planned features and none of our users so far used the feature to our knowledge.
+- Sharing emails are now sent under the name of the sharer, with their email address specified in reply-to.
+- Fixed several display bugs in Internet Explorer.
+- Fixed that opening your own sharing link would sometimes prompt you to choose incognito mode.
+- Fixed regression causing some popup windows to display partially-off-screen on mobile.
+- Fixed minor display bugs with first-time usage tips on IE and Firefox.
+
+### v0.155 (2016-03-27) [bugfixes]
+- Remove chatty console.log() recently added for debugging. Oops.
+
+### v0.154 (2016-03-27)
+- Apps can now verify a user's email address via a Powerbox interaction.
+- Apps can now more easily tell when multiple sessions originate from the same grain tab (e.g. because the user closed their laptop and then opened it later and continued using the tab). Previously the app had to save a cookie to do this, but now Sandstorm will give it a `tabId`.
+- Sandstorm will now warn you in the admin panel if Websockets aren't working, which tends to break many apps.
+- The Picker Powerbox's query format has changed. Queries are now specified as base64-packed-capnp rather than JSON. This is necessary since the Sandstorm system does not necessarily know the schema of these descriptors and so won't be able to perform a JSON->capnp translation itself.
+- Fixed a refresh loop that could occur when visiting a sharing link that had been revoked.
+- Fixed some email deliverability issues. (Envelope sender was not always being set correctly.)
+- Self-hosting: Fixed possible (but obscure) exception during startup migrations introduced in 0.151.
+- Sandstorm for Work: Fixed "LDAP Search Username Field" not saving.
+
+### v0.153 (2016-03-22) [bugfixes]
+- Fix blank screen when clicking through a share-by-identity email.
+
+### v0.152 (2016-03-21) [bugfixes]
+- Self-hosting: Fixed sending server invites by email (from the "send invites" tabh in the admin settings).
+- Improved error message seen when static publishing TXT records are misconfigured.
+- Improved error message when trying to send a sharing invite to an invalid email address.
+
+### v0.151 (2016-03-20) [bugfixes]
+- Expanded LDAP config for search-query-based user matching to support authenticating the search and adding a search filter. LDAP is nuts.
+- Worked around bug in Chrome 50 which was causing app installs to sometimes fail complaining that no URL was provided.
+- Worked around an unexplained bug observed in the wild causing Sandstorm to fail to load in a browser claiming "no such route", apparently when accessed from behind certain proxies.
+- Worked around bug in libseccomp which could cause Sandstorm binaries built using older kernel headers to fail to filter newer syscalls, possibly making systems insecure. All of our releases have been built against up-to-date headers, so we don't believe our release builds have been affected.
+- Fixed a case where "who has access" dialog could show users named "null".
+- Self-hosting: STMP config has been broken out into components rather than using a "URL" format.
+- Development: Restarting `spk dev` will now reload all grains of the app without the need to manually refresh.
+- Internal refactoring of grain tab management.
+
+### v0.150 (2016-03-13)
+- **Sandstorm for Work:** For self-hosters in a business setting. Initial release supports LDAP and basic organization managament. Requires a feature key to enable. See the "For Work" section of the admin settings.
+- Your set of open grains will now be preserved through refreshes and closing/reopening the browser.
+- The "home" button is now aligned with the sidebar and collapses with it, which maybe makes it clearer that the rest of the top bar is attached to the content.
+- The file-open dialogs when uploading an SPK or a grain backup now filter for the desired file type.
+- Offer templates can now substitute a sluggified grain title into the template body.
+- Browser's autocomplete will no longer draw over sharing autocomplete.
+
+### v0.149 (2016-02-27) [bugfixes]
+- Fix non-token-specific API host, i.e. all API tokens created before 0.146.
+
+### v0.148 (2016-02-27) [bugfixes]
+- Fix new offer template unauthenticated host properties feature to support mapping resource paths containing periods. This was failing because periods are not permitted in Mongo keys.
+
+### v0.147 (2016-02-27)
+- Offer templates can now define some static properties of the API host to be served statically in response to unauthenticated requests, such as the DAV header for OPTIONS requests as well as simple resources. This should allow DAV apps like Davros and Radicale to fix incompatibilities with certain client apps.
+- Offer templates can now include a clipboard button which copies the text to the clipboard.
+- Sharing emails to/from Github identities will now use the Github account's primary email address, rather than the first-listed address.
+- Setting BIND_IP to an ipv6 address should now work.
+- Improved styling of "shrink sidebar" button.
+- Fixed that if you visited a grain URL when not logged in, saw the "request access" screen, then logged in as an identity that already has access, the "request access" screen would continue to display until refresh.
+- Fixed that "request access" would display for non-existent grain IDs.
+- Fixed several icons displaying incorrectly on IE, especially in the sharing UI.
+- Fixed that the API endpoint URL in the (obscure) webkey dialog was showing up as `undefined`.
+
+### v0.146 (2016-02-21)
+- If you open a grain URL to which you do not have access -- presumably becaues the owner forgot to share it with you, and thought that just copy/pasting the URL would work -- you will now be presented with the ability to send an access request email.
+- Client apps accessing Sandstorm grains via HTTP APIs no longer need to be whitelisted for use of HTTP Basic Auth. As part of this, Sandstorm now allocates a new random hostname for every API key. This change was made so that an upcoming CalDAV apps can be used with any standard CalDAV client. We still prefer new apps use bearer token authorization rather than basic auth.
+- IP network capabilities can now be granted through the powerbox, opening the door to apps that need to operate at the raw TCP or UDP level -- however, only the server admin is able to grant such capabilities, since it could be a security problem for large shared servers.
+- Shrinking the sidebar is now sticky (remembered by your browser, not by the server).
+- It is now possible for developers to recover from losing their app signing key by submitting a pull request against `src/sandstorm/appid-replacements.capnp` in the Sandstorm repository.
+- More large internal refactoring to switch to ES6 with JSCS-enforced style checking.
+- Fixed another issue that could cause spurious errors when returning to grains after losing internet connectivity for a bit.
+- Fixed problem that caused Groove Basin streams to disconnect.
+- Oasis: Fixed another problem preventing adding an identity to your account which was already attached to some other empty account.
+- Oasis: Fixed problem preventing signup keys from being consumed (applies to preorders and Indiegogo customers who hadn't claimed their invites yet).
+
+### v0.145 (2016-02-16) [bugfixes]
+- Updated glibc for CVE-2015-7547.
+- Oasis: Fixed a bug that prevented adding an identity that is already attached to an empty account.
+
+### v0.144 (2016-02-13)
+- Initial version of Picker Powerbox implemented. A grain can now prompt the user to choose one of their other grains to share, and then the requesting grain can present that grain to other users. This could be used e.g. to share securely through a chat room or message board. Look for apps to start using this soon.
+- When app search gives no results, we now suggest the user try the app market.
+- HTTP headers `If-Match: *` and `If-None-Match: *` are now correctly passed through to the app.
+- Added tooltips to all topbar items.
+- The "share access" button now works in incognito mode (and suggests copy/pasting the link).
+- Significant internal refactoring: Now using more ES6 features, and using `box-sizing: border-box` everywhere.
+- Self-hosting: We now show an explanatory error message in the admin panel if `WILDCARD_HOST` is misconfigured, which we've found is a common mistake.
+- Oasis: Fixed bug where grains could get stuck at "loading" spinner forever.
+
+### v0.143 (2016-02-07) [bugfixes]
+- Added support for HTTP PATCH method.
+- Fixed inability to revoke some types of shares in the "who has access" dialog.
+- Removed obsolete and confusing `sandstorm reset-oauth` shell command.
+
+### v0.142 (2016-02-03) [bugfixes]
+- Page titles (as in document.title) now use the server's title as specified in the admin settings rather than just "Sandstorm".
+- Dev apps now appear first in the app list.
+- Fixed apps with multiple "new" actions always using the last action when launched in dev mode.
+- Fixed icon in sidebar for shared grains.
+- Fixed computation of sharing stats (part of admin stats).
+- Oasis: Fixed bug where free users were not getting infinite grains as promised after referring someone. :(
+- Oasis: Users subscribed to our announcement mailing list will now receive 1GB bonus storage.
+
 ### v0.141 (2016-01-25) [bugfixes]
 - Fix blank screen when trying to log in as an identity that is connected to one or more accounts as a non-login identity.
 - Oasis: Fix regression that prevented linking an identity to your account which had already been logged into in the past but never created any grains. In this case, the old empty account is supposed to be deleted so that the identity can be added to the current account, however the recent referral program notification that was sent to everyone caused these accounts to be considered non-empty and thus not elligible for auto-deletion.

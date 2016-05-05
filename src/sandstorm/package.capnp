@@ -412,7 +412,7 @@ struct Metadata {
   # Where `<key-id>` is a PGP key ID or email address associated with the key.
 
   description @14 :Util.LocalizedText;
-  # The app's description description in Github-flavored Markdown format, to be displayed e.g.
+  # The app's description in Github-flavored Markdown format, to be displayed e.g.
   # in an app store. Note that the Markdown is not permitted to cotnain HTML nor image tags (but
   # you can include a list of screenshots separately).
 
@@ -499,6 +499,7 @@ enum OpenSourceLicense {
   cddl      @15 $osiInfo(id = "CDDL-1.0", title = "CDDL", requireSource = true);
   epl       @16 $osiInfo(id = "EPL-1.0" , title = "Eclipse Public License", requireSource = true);
   cpal      @17 $osiInfo(id = "CPAL-1.0" , title = "Common Public Attribution License", requireSource = true);
+  zlib      @18 $osiInfo(id = "Zlib" , title = "Zlib/libpng License");
 
   # Is your preferred license not on the list? We are happy to add any OSI-approved license; that
   # is, anything on this page:
@@ -587,7 +588,7 @@ enum Category {
   # Content consumption
 
   media @8 $categoryInfo(title = "Media");
-  # Content *consuption*: Apps that aren't used to create content, but are used to display and
+  # Content *consumption*: Apps that aren't used to create content, but are used to display and
   # consume it. Music players, photo galleries, video, feed readers, etc.
 
   games @9 $categoryInfo(title = "Games");

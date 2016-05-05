@@ -117,6 +117,7 @@ module.exports = utils.testAllLogins({
   "Test remote install" : function (browser) {
     browser
       .url(browser.launch_url + "/install/ca690ad886bf920026f8b876c19539c1?url=http://sandstorm.io/apps/ssjekyll8.spk")
+      .disableGuidedTour()
       .waitForElementVisible('#step-confirm', very_long_wait)
       .click('#confirmInstall')
       .waitForElementVisible(appDetailsTitleSelector, short_wait)
@@ -164,6 +165,93 @@ module.exports = utils.testAllLogins({
   },
 });
 
+module.exports["Test grain not found"] = function (browser) {
+  browser
+    .url(browser.launch_url + "/grain/BogusGrainId")
+    .waitForElementVisible(".grain-not-found", medium_wait)
+    .assert.containsText(".grain-not-found", "No grain found")
+    .loginDevAccount()
+    .url(browser.launch_url + "/grain/BogusGrainId")
+    .waitForElementVisible(".grain-not-found", medium_wait)
+    .assert.containsText(".grain-not-found", "No grain found")
+    .end()
+}
+
+module.exports["Sign in at grain URL"] = function (browser) {
+  browser
+    .installApp("http://sandstorm.io/apps/ssjekyll8.spk", "ca690ad886bf920026f8b876c19539c1", "nqmcqs9spcdpmqyuxemf0tsgwn8awfvswc58wgk375g4u25xv6yh")
+    .waitForElementVisible("#grainTitle", medium_wait)
+    .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+    .getDevName(function (devName) {
+      browser
+        .url(function (grainUrl) {
+          browser
+            .execute("window.Meteor.logout()")
+            .url(browser.launch_url)
+            .url(grainUrl.value)
+            .waitForElementVisible(".request-access", medium_wait)
+            .assert.containsText(".request-access", "Please sign in to request access.")
+            .execute(function (name) { window.loginDevAccount(name) }, [devName.value])
+            .waitForElementVisible("#grain-frame", medium_wait)
+            .waitForElementVisible("#grainTitle", medium_wait)
+            .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+            .frame("grain-frame")
+            .waitForElementPresent("#publish", medium_wait)
+            .assert.containsText("#publish", "Publish")
+            .frame(null)
+            // Now try it with a /shared/ path.
+            .click('.topbar .share > .show-popup')
+            .waitForElementVisible('#shareable-link-tab-header', short_wait)
+            .click('#shareable-link-tab-header')
+            .waitForElementVisible(".new-share-token", short_wait)
+            .submitForm('.new-share-token')
+            .waitForElementVisible('#share-token-text', medium_wait)
+            .getText('#share-token-text', function(response) {
+              browser
+                .execute("window.Meteor.logout()")
+                .loginDevAccount(null, false, function (otherName) { // Generate a new user.
+                  browser
+                    .execute("window.Meteor.logout()")
+                    .url(browser.launch_url)
+                    .url(response.value)
+                    .waitForElementVisible("#grain-frame", medium_wait)
+                    .waitForElementVisible("#grainTitle", medium_wait)
+                    .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+                    .execute(function (name) { window.loginDevAccount(name) }, [otherName])
+
+                    // It's unclear whether there should be an identity chooser here.
+                    // See https://github.com/sandstorm-io/sandstorm/issues/1076
+                    // .waitForElementVisible("button.pick-identity", medium_wait)
+                    // .click("button.pick-identity")
+
+                    .waitForElementNotPresent(".request-access", medium_wait)
+                    // The forget grain button only appears once we've logged in.
+                    .waitForElementVisible("#deleteGrain", medium_wait)
+                    .waitForElementVisible("#grainTitle", medium_wait)
+                    .waitForElementVisible("#grain-frame", medium_wait)
+                    .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+                    .frame("grain-frame")
+                    .waitForElementPresent("#publish", medium_wait)
+                    .assert.containsText("#publish", "Publish")
+                    .frame(null)
+                    .end()
+                })
+            });
+        });
+    });
+}
+
+module.exports["Logging out closes grain"] = function (browser) {
+  browser
+    .installApp("http://sandstorm.io/apps/ssjekyll8.spk", "ca690ad886bf920026f8b876c19539c1", "nqmcqs9spcdpmqyuxemf0tsgwn8awfvswc58wgk375g4u25xv6yh")
+    .waitForElementVisible("#grainTitle", medium_wait)
+    .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+    .execute("window.Meteor.logout()")
+    .waitForElementVisible(".request-access", medium_wait)
+    .assert.containsText(".request-access", "Please sign in to request access.")
+    .end()
+}
+
 module.exports["Test grain anonymous user"] = function (browser) {
   browser
     // Upload app as normal user
@@ -208,7 +296,7 @@ module.exports["Test roleless sharing"] = function (browser) {
   browser
   // Upload app as 1st user
     .installApp("http://sandstorm.io/apps/ssjekyll8.spk", "ca690ad886bf920026f8b876c19539c1", "nqmcqs9spcdpmqyuxemf0tsgwn8awfvswc58wgk375g4u25xv6yh")
-    .execute(function () { return globalDb.getIdentity(Meteor.user().loginIdentities[0].id).profile.intrinsicName; }, [], function(result) {
+    .getDevName(function (result) {
       firstUserName = result.value;
     })
     .waitForElementVisible('.grain-frame', medium_wait)
@@ -223,7 +311,7 @@ module.exports["Test roleless sharing"] = function (browser) {
     .getText('#share-token-text', function(response) {
       browser
         .loginDevAccount()
-        .execute(function () { return globalDb.getIdentity(Meteor.user().loginIdentities[0].id).profile.intrinsicName; }, [], function(result) {
+        .getDevName(function(result) {
           secondUserName = result.value;
         })
         .url(response.value)
@@ -263,8 +351,6 @@ module.exports["Test roleless sharing"] = function (browser) {
 
             .loginDevAccount(firstUserName)
             .url(response.value)
-            .waitForElementVisible("button.pick-identity", short_wait)
-            .click("button.pick-identity")
             .waitForElementVisible('.grain-frame', medium_wait)
             .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
             .click('.topbar .share > .show-popup')
@@ -337,7 +423,7 @@ module.exports["Test role sharing"] = function (browser) {
     });
 }
 
-module.exports["Test grain incognito interstitial"] = function (browser) {
+module.exports["Test grain identity chooser interstitial"] = function (browser) {
   browser
     // Upload app as normal user
     .installApp("http://sandstorm.io/apps/ssjekyll8.spk", "ca690ad886bf920026f8b876c19539c1", "nqmcqs9spcdpmqyuxemf0tsgwn8awfvswc58wgk375g4u25xv6yh")
@@ -349,23 +435,41 @@ module.exports["Test grain incognito interstitial"] = function (browser) {
     .waitForElementVisible(".new-share-token", short_wait)
     .submitForm('.new-share-token')
     .waitForElementVisible('#share-token-text', medium_wait)
-    // Navigate to the url with an anonymous user
-    .getText('#share-token-text', function(response) {
+    .getText('#share-token-text', function(shareLink) {
       browser
-        .loginDevAccount()
-        .pause(short_wait)
-        // Try incognito
-        .url(response.value)
-        .waitForElementVisible(".incognito-button", short_wait)
-        .click(".incognito-button")
+        .url(shareLink.value)
+         // Identity picker should not come up on visiting our own link.
+        .url(shareLink.value)
         .waitForElementVisible('.grain-frame', medium_wait)
         .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
         .frame('grain-frame')
         .waitForElementPresent('#publish', medium_wait)
         .assert.containsText('#publish', 'Publish')
+        .frame(null)
+
+        // Navigate to the url with an anonymous user
+        .loginDevAccount()
+        .pause(short_wait)
+        // Try incognito
+        .url(shareLink.value)
+        .waitForElementVisible(".incognito-button", short_wait)
+        .click(".incognito-button")
+        .waitForElementVisible('.grain-frame', medium_wait)
+        .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
+        .execute(function() {
+          return Accounts.getCurrentIdentityId();
+        }, [], function (response) {
+          browser.assert.equal(response.value, null);
+        })
+        .frame('grain-frame')
+        .waitForElementPresent('#publish', medium_wait)
+        .assert.containsText('#publish', 'Publish')
         // Try redeeming as current user
         // TODO(someday): pick a better app that shows off the different userid/username
-        .url(response.value)
+        .frame(null)
+        .click(".topbar .share > .show-popup")
+        .waitForElementVisible('a.open-non-anonymously', short_wait)
+        .click("a.open-non-anonymously")
         .waitForElementVisible("button.pick-identity", short_wait)
         .click("button.pick-identity")
         .waitForElementVisible('.grain-frame', medium_wait)
@@ -374,6 +478,39 @@ module.exports["Test grain incognito interstitial"] = function (browser) {
         .waitForElementPresent('#publish', medium_wait)
         .assert.containsText('#publish', 'Publish')
         .frame(null)
-        .end();
+
+         // Identity picker should not come up on reloading the page.
+        .url(shareLink.value)
+        .waitForElementVisible('.grain-frame', medium_wait)
+        .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
+        .execute(function() {
+          return Accounts.getCurrentIdentityId();
+        }, [], function (response) {
+          browser.assert.equal(!!response.value, true);
+        })
+        .frame('grain-frame')
+        .waitForElementPresent('#publish', medium_wait)
+        .assert.containsText('#publish', 'Publish')
+        .frame(null)
+
+        .click('.topbar .share > .show-popup')
+        .waitForElementVisible("#shareable-link-tab-header", short_wait)
+        .click("#shareable-link-tab-header")
+        .waitForElementVisible(".new-share-token", short_wait)
+        .submitForm('.new-share-token')
+        .waitForElementVisible('#share-token-text', medium_wait)
+        .getText('#share-token-text', function(shareLink) {
+          browser
+            .url(shareLink.value)
+             // Identity picker should not come up on visiting our own link.
+            .url(shareLink.value)
+            .waitForElementVisible('.grain-frame', medium_wait)
+            .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
+            .frame('grain-frame')
+            .waitForElementPresent('#publish', medium_wait)
+            .assert.containsText('#publish', 'Publish')
+            .frame(null)
+            .end()
+        });
     });
 }

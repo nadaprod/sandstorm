@@ -3,10 +3,12 @@
 Style: Hands-on introductory tutorial.
 
 This tutorial will show you how to package an app for
-[Sandstorm](https://sandstorm.io) in five minutes. Going through
+[Sandstorm](https://sandstorm.io) in five minutes. (Sometimes the
+downloads can take up to 30 minutes, but the interactive time is about
+five minutes. Any slow steps are labeled accordingly.) Going through
 this tutorial, you'll learn:
 
-* How to take an existing web application and turn into a Sandstorm
+* How to take an existing web application and turn it into a Sandstorm
   package (SPK).
 
 * How our packaging helper (`vagrant-spk`) lets you edit the app's files on your main operating
@@ -108,7 +110,7 @@ Sandstorm, that you will develop the package with. To do that, run the following
 command:
 
 ```bash
-vagrant-spk up
+vagrant-spk vm up
 ```
 
 (You should be running it from the `~/projects/php-app-to-package-for-sandstorm` directory.)
@@ -300,7 +302,7 @@ In our case, we're done using the virtual machine running this app, so
 it's safe to stop it. Run this command:
 
 ```bash
-vagrant-spk halt
+vagrant-spk vm halt
 ```
 
 (You should be running it from the `~/projects/php-app-to-package-for-sandstorm` directory.)
@@ -309,7 +311,7 @@ Now port 6080 is available for other app packaging projects. If you ever want to
 this app's packaging again, you can bring it up by running:
 
 ```bash
-vagrant-spk up
+vagrant-spk vm up
 ```
 
 If you ever are confused about which Vagrant virtual machines are

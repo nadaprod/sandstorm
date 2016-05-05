@@ -17,6 +17,8 @@
 #include "indexer.h"
 #include <sandstorm/app-index/app-index.capnp.h>
 #include <sandstorm/spk.h>
+#include <sandstorm/id-to-text.h>
+#include <sandstorm/appid-replacements.h>
 #include <capnp/serialize.h>
 #include <stdlib.h>
 #include <map>
@@ -73,7 +75,7 @@ void Indexer::addKeybaseProfile(kj::StringPtr fingerprint, capnp::MallocMessageB
   file.finalize(kj::str("/var/keybase/", fingerprint));
 }
 
-bool Indexer::tryGetAppId(kj::StringPtr packageId, byte appId[crypto_sign_PUBLICKEYBYTES]) {
+bool Indexer::tryGetPublicKey(kj::StringPtr packageId, byte publicKey[crypto_sign_PUBLICKEYBYTES]) {
   KJ_REQUIRE(packageId.size() == 32, "invalid package ID", packageId);
   for (auto c: packageId) {
     KJ_REQUIRE(isalnum(c), "invalid package ID", packageId);
@@ -97,7 +99,8 @@ bool Indexer::tryGetAppId(kj::StringPtr packageId, byte appId[crypto_sign_PUBLIC
   auto bytes = capnp::AnyStruct::Reader(
       infoMessage.getRoot<spk::VerifiedInfo>().getAppId()).getDataSection();
   KJ_ASSERT(bytes.size() == crypto_sign_PUBLICKEYBYTES);
-  memcpy(appId, bytes.begin(), bytes.size());
+  static_assert(crypto_sign_PUBLICKEYBYTES == APP_ID_BYTE_SIZE, "app ID size changed?");
+  memcpy(publicKey, sandstorm::getPublicKeyForApp(bytes).begin(), crypto_sign_PUBLICKEYBYTES);
 
   return true;
 }
@@ -181,35 +184,15 @@ void Indexer::getSubmissionStatus(kj::StringPtr packageId, capnp::MessageBuilder
   capnp::readMessageCopyFromFd(raiiOpen(statusFile, O_RDONLY), output);
 }
 
+kj::String Indexer::getAppTitle(kj::StringPtr packageId) {
+  capnp::StreamFdMessageReader message(
+      sandstorm::raiiOpen(kj::str("/var/packages/", packageId, "/metadata"), O_RDONLY));
+  return kj::str(message.getRoot<spk::VerifiedInfo>().getTitle().getDefaultText());
+}
+
 // =======================================================================================
 
 namespace {
-
-class AppIdJsonHandler: public capnp::JsonCodec::Handler<spk::AppId> {
-public:
-  void encode(const capnp::JsonCodec& codec, spk::AppId::Reader input,
-              capnp::JsonValue::Builder output) const override {
-    output.setString(appIdString(input));
-  }
-
-  void decode(const capnp::JsonCodec& codec, capnp::JsonValue::Reader input,
-              spk::AppId::Builder output) const override {
-    KJ_UNIMPLEMENTED("AppIdJsonHandler::decode");
-  }
-};
-
-class PackageIdJsonHandler: public capnp::JsonCodec::Handler<spk::PackageId> {
-public:
-  void encode(const capnp::JsonCodec& codec, spk::PackageId::Reader input,
-              capnp::JsonValue::Builder output) const override {
-    output.setString(packageIdString(input));
-  }
-
-  void decode(const capnp::JsonCodec& codec, capnp::JsonValue::Reader input,
-              spk::PackageId::Builder output) const override {
-    KJ_UNIMPLEMENTED("PackageIdJsonHandler::decode");
-  }
-};
 
 class DataHandler: public capnp::JsonCodec::Handler<capnp::Data> {
 public:
@@ -227,8 +210,7 @@ public:
 
 }  // namespace
 
-void Indexer::updateIndexInternal(kj::StringPtr outputFilename, kj::StringPtr outputDir,
-                                  bool approvedApps) {
+void Indexer::updateIndexInternal(kj::StringPtr outputDir, bool experimental) {
   capnp::MallocMessageBuilder scratch;
   auto orphanage = scratch.getOrphanage();
 
@@ -250,8 +232,8 @@ void Indexer::updateIndexInternal(kj::StringPtr outputFilename, kj::StringPtr ou
 
       capnp::StreamFdMessageReader statusMessage(raiiOpen(statusFile, O_RDONLY));
       auto status = statusMessage.getRoot<SubmissionStatus>();
-      if (status.getRequestState() == SubmissionState::PUBLISH &&
-          status.isApproved() == approvedApps) {
+      auto include = experimental ? status.isPending() : status.isApproved();
+      if (include && status.getRequestState() == SubmissionState::PUBLISH) {
         capnp::StreamFdMessageReader metadataMessage(raiiOpen(metadataFile, O_RDONLY));
         auto info = metadataMessage.getRoot<spk::VerifiedInfo>();
         auto metadata = info.getMetadata();
@@ -412,7 +394,7 @@ void Indexer::updateIndexInternal(kj::StringPtr outputFilename, kj::StringPtr ou
     kj::FdOutputStream(file.getFd()).write(text.begin(), text.size());
     file.finalize(kj::str(outputDir, "/", appEntry.first, ".json"));
 
-    if (approvedApps) {
+    if (!experimental) {
       // Write the symlink under /var/apps.
       auto target = kj::str("../packages/",
           packageIdString(appEntry.second.summary.getReader().getPackageId()));
@@ -426,14 +408,14 @@ void Indexer::updateIndexInternal(kj::StringPtr outputFilename, kj::StringPtr ou
   KJ_ASSERT(i == apps.size());
 
   auto text = json.encode(indexData);
-  StagingFile file("/var/www/apps");
+  StagingFile file(outputDir);
   kj::FdOutputStream(file.getFd()).write(text.begin(), text.size());
-  file.finalize(kj::str("/var/www/apps/", outputFilename));
+  file.finalize(kj::str(outputDir, "/index.json"));
 }
 
 void Indexer::updateIndex() {
-  updateIndexInternal("index.json", "/var/www/apps", true);
-  updateIndexInternal("index-experimental.json", "/var/www/experimental", false);
+  updateIndexInternal("/var/www/apps", false);
+  updateIndexInternal("/var/www/experimental", true);
 }
 
 kj::String Indexer::writeIcon(spk::Metadata::Icon::Reader icon) {

@@ -21,6 +21,14 @@ shell/public/spinner_96.gif
     License: MIT
     License URL: https://github.com/sjhcockrell/spinners/blob/master/README.md
 
+shell/public/clipboard.js
+    What: clipboard.js
+    Copyright: Zeno Rocha
+    Source URL: https://github.com/zenorocha/clipboard.js/
+    License: MIT
+    License URL: https://github.com/zenorocha/clipboard.js/blob/master/readme.md
+                 (at bottom)
+
 shell/public/fonts/WOFF/OTF/SourceSansPro-Regular.otf.woff
 shell/public/fonts/WOFF/OTF/SourceSansPro-It.otf.woff
 shell/public/fonts/WOFF/OTF/SourceSansPro-Semibold.otf.woff
@@ -40,13 +48,20 @@ shell/packages/sandstorm-accounts-ui
     License: MIT
     License URL: https://github.com/meteor/meteor/blob/devel/LICENSE.txt
 
-shell/client/ansi-up.js
+shell/client/vendor/ansi-up.js
     What: ansi_up library (converts ANSI escape codes to HTML)
     Source URL: http://github.com/drudru/ansi_up
     Copyright: Dru Nelson
     License: MIT
     License URL: https://github.com/drudru/ansi_up/blob/master/Readme.md
                  (at bottom)
+
+shell/client/vendor/es6-promise.js
+    What: ES6 Promise polyfill
+    Source URL: https://github.com/stefanpenner/es6-promise
+    Copyright: Yehuda Katz, Tom Dale, Stefan Penner and contributors
+    License: MIT
+    License URL: https://github.com/stefanpenner/es6-promise/blob/master/LICENSE
 
 shell/packages/sandstorm-identicons/identicon.js
     What: identicon.js
@@ -69,6 +84,20 @@ shell/packages/introjs/client/*
     License: MIT
     License URL: https://github.com/usablica/intro.js/blob/master/README.md
                  (at bottom)
+
+shell/packages/accounts-ldap/*
+    What: Meteor accounts-ldap package
+    Source URL: https://github.com/typ90/meteor-accounts-ldap
+    Copyright: Eric Typaldos
+    License: MIT
+    License URL: https://github.com/typ90/meteor-accounts-ldap/blob/master/LICENSE
+
+shell/packages/accounts-saml/*
+    What: Meteor accounts-saml package
+    Source URL: https://github.com/nate-strauser/meteor-accounts-saml
+    Copyright: Nathan Strauser
+    License: MIT
+    License URL: https://github.com/nate-strauser/meteor-accounts-saml/blob/master/LICENSE
 
 src/joyent-http/*
     What: Node.js HTTP parsing library
@@ -301,4 +330,3 @@ Google's Android.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-

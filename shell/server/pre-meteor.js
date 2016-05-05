@@ -17,12 +17,12 @@
 // This file implements logic that we place in front of our main Meteor application,
 // including routing of requests to proxies and handling of static web publishing.
 
-const Url = Npm.require('url');
-const Fs = Npm.require('fs');
-const Dns = Npm.require('dns');
-const Promise = Npm.require('es6-promise').Promise;
-const Future = Npm.require('fibers/future');
-const Http = Npm.require('http');
+const Url = Npm.require("url");
+const Fs = Npm.require("fs");
+const Dns = Npm.require("dns");
+const Promise = Npm.require("es6-promise").Promise;
+const Future = Npm.require("fibers/future");
+const Http = Npm.require("http");
 
 const HOSTNAME = Url.parse(process.env.ROOT_URL).hostname;
 const DDP_HOSTNAME = process.env.DDP_DEFAULT_CONNECTION_URL &&
@@ -53,23 +53,23 @@ function wwwHandlerForGrain(grainId) {
     let path = request.url;
 
     // If a directory, open 'index.html'.
-    if (path.slice(-1) === '/') {
-      path = path + 'index.html';
+    if (path.slice(-1) === "/") {
+      path = path + "index.html";
     }
 
     // Strip leading '/'.
-    if (path[0] === '/') path = path.slice(1);
+    if (path[0] === "/") path = path.slice(1);
 
     // Strip query.
-    path = path.split('?')[0];
+    path = path.split("?")[0];
 
     let type = mime.lookup(path);
     const charset = mime.charsets.lookup(type);
     if (charset) {
-      type = type + '; charset=' + charset;
-    } else if (type === 'application/json') {
+      type = type + "; charset=" + charset;
+    } else if (type === "application/json") {
       // HACK: Apparently the MIME module does not assume UTF-8 for JSON. :(
-      type = type + '; charset=utf-8';
+      type = type + "; charset=utf-8";
     }
 
     let started = false;
@@ -79,27 +79,28 @@ function wwwHandlerForGrain(grainId) {
     //   Note that nginx will also auto-compress things...
 
     const headers = {
-      'Content-Type': type,
-      'Cache-Control': 'public, max-age=' + CACHE_TTL_SECONDS,
+      "Content-Type": type,
+      "Cache-Control": "public, max-age=" + CACHE_TTL_SECONDS,
     };
 
-    if (path === 'apps/index.json' ||
-        path === 'apps/index-experimental.json' ||
-        path.match(/apps\/[a-z0-9]{52}[.]json/)) {
+    if (path === "apps/index.json" ||
+        path.match(/apps\/[a-z0-9]{52}[.]json/) ||
+        path === "experimental/index.json" ||
+        path.match(/experimental\/[a-z0-9]{52}[.]json/)) {
       // TODO(cleanup): Extra special terrible hack: The app index needs to serve these JSON files
       //   cross-origin. We could almost just make all web sites allow cross-origin since generally
       //   web publishing is meant to publish public content. There is one case where this is
       //   problematic, though: sites behind a firewall. Those sites could potentially be read
       //   by outside sites if CORS is enabled on them. Some day we should make it so apps can
       //   explicitly opt-in to allowing cross-origin queries but that day is not today.
-      headers['Access-Control-Allow-Origin'] = '*';
+      headers["Access-Control-Allow-Origin"] = "*";
     }
 
     const stream = {
       expectSize(size) {
         if (!started) {
           started = true;
-          response.writeHead(200, _.extend(headers, { 'Content-Length': size }));
+          response.writeHead(200, _.extend(headers, { "Content-Length": size }));
         }
       },
 
@@ -115,7 +116,7 @@ function wwwHandlerForGrain(grainId) {
       done(data) {
         if (!started) {
           started = true;
-          response.writeHead(200, _.extend(headers, { 'Content-Length': 0, }));
+          response.writeHead(200, _.extend(headers, { "Content-Length": 0, }));
         }
 
         sawEnd = true;
@@ -127,51 +128,51 @@ function wwwHandlerForGrain(grainId) {
       return supervisor.getWwwFileHack(path, stream).then((result) => {
         // jscs:disable disallowQuotedKeysInObjects
         const status = result.status;
-        if (status === 'file') {
+        if (status === "file") {
           if (!sawEnd) {
-            console.error('getWwwFileHack didn\'t write file to stream');
+            console.error("getWwwFileHack didn't write file to stream");
             if (!started) {
               response.writeHead(500, {
-                'Content-Type': 'text/plain',
+                "Content-Type": "text/plain",
               });
-              response.end('Internal server error');
+              response.end("Internal server error");
             }
 
             response.end();
           }
-        } else if (status === 'directory') {
+        } else if (status === "directory") {
           if (started) {
-            console.error('getWwwFileHack wrote to stream for directory');
+            console.error("getWwwFileHack wrote to stream for directory");
             if (!sawEnd) {
               response.end();
             }
           } else {
             response.writeHead(303, {
-              'Content-Type': 'text/plain',
-              'Location': '/' + path + '/',
-              'Cache-Control': 'public, max-age=' + CACHE_TTL_SECONDS,
+              "Content-Type": "text/plain",
+              "Location": "/" + path + "/",
+              "Cache-Control": "public, max-age=" + CACHE_TTL_SECONDS,
             });
-            response.end('redirect: /' + path + '/');
+            response.end("redirect: /" + path + "/");
           }
-        } else if (status === 'notFound') {
+        } else if (status === "notFound") {
           if (started) {
-            console.error('getWwwFileHack wrote to stream for notFound');
+            console.error("getWwwFileHack wrote to stream for notFound");
             if (!sawEnd) {
               response.end();
             }
           } else {
             response.writeHead(404, {
-              'Content-Type': 'text/plain',
+              "Content-Type": "text/plain",
             });
-            response.end('404 not found: /' + path);
+            response.end("404 not found: /" + path);
           }
         } else {
-          console.error('didn\'t understand result of getWwwFileHack:', status);
+          console.error("didn't understand result of getWwwFileHack:", status);
           if (!started) {
             response.writeHead(500, {
-              'Content-Type': 'text/plain',
+              "Content-Type": "text/plain",
             });
-            response.end('Internal server error');
+            response.end("Internal server error");
           }
         }
       });
@@ -183,7 +184,7 @@ function wwwHandlerForGrain(grainId) {
 
 function writeErrorResponse(res, err) {
   let status = 500;
-  if (err instanceof Meteor.Error && typeof err.error === 'number' &&
+  if (err instanceof Meteor.Error && typeof err.error === "number" &&
       err.error >= 400 && err.error < 600) {
     status = err.error;
   } else if (err.httpErrorCode) {
@@ -193,7 +194,7 @@ function writeErrorResponse(res, err) {
   // Log errors that are our fault, but not errors that are the client's fault.
   if (status >= 500) console.error(err.stack);
 
-  res.writeHead(status, { 'Content-Type': err.htmlMessage ? 'text/html' : 'text/plain' });
+  res.writeHead(status, { "Content-Type": err.htmlMessage ? "text/html" : "text/plain" });
   res.end(err.htmlMessage || err.message);
 }
 
@@ -210,9 +211,37 @@ function checkMagic(buf, magic) {
   return true;
 }
 
+function serveSelfTest(req, res) {
+  try {
+    if (req.method === "GET" &&
+        req.url === "/") {
+      const content = new Buffer("Self-test OK.");
+
+      // Convert the ROOT_URL to something that is a valid origin.
+      let rootUrlAsOrigin = process.env.ROOT_URL;
+      if (rootUrlAsOrigin.slice(-1) === "/") {
+        rootUrlAsOrigin = rootUrlAsOrigin.slice(0, -1);
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/plain",
+        "Content-Length": content.length,
+        "Access-Control-Allow-Origin": rootUrlAsOrigin,
+      });
+      res.end(content);
+    } else {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("Bad request to self-test subdomain.");
+      return;
+    }
+  } catch (err) {
+    console.log("WARNING: An error occurred while serving self-test; proceeding anyway:", err);
+  }
+}
+
 function serveStaticAsset(req, res) {
   inMeteor(() => {
-    if (req.method === 'GET') {
+    if (req.method === "GET") {
       // jscs:disable validateQuoteMarks
       const assetCspHeader = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
       if (req.headers['if-none-match'] === 'permanent') {
@@ -267,7 +296,7 @@ function serveStaticAsset(req, res) {
         res.writeHead(200, headers);
         res.end(asset.content);
       } else {
-        res.writeHead(404, {'Content-Type': 'text/plain'});
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('not found');
       }
     } else if (req.method === 'POST') {
@@ -318,11 +347,11 @@ function serveStaticAsset(req, res) {
         return;
       }
 
-      const assetId = globalDb.addStaticAsset({mimeType: type}, content);
+      const assetId = globalDb.addStaticAsset({ mimeType: type }, content);
       const old = Meteor.users.findAndModify({
-        query: {'_id': identityId},
-        update: {$set: {'profile.picture': assetId}},
-        fields: {'profile.picture': 1},
+        query: { '_id': identityId },
+        update: { $set: { 'profile.picture': assetId } },
+        fields: { 'profile.picture': 1 },
       });
 
       if (old && old.profile && old.profile.picture) {
@@ -362,7 +391,9 @@ Meteor.startup(() => {
 
   WebApp.httpServer.on('upgrade', (req, socket, head) => {
     Promise.resolve(undefined).then(() => {
-      if (isSandstormShell(req.headers.host.split(':')[0])) {
+      if (!req.headers.host) {
+        throw new Meteor.Error(400, 'Missing Host header');
+      } else if (isSandstormShell(req.headers.host.split(':')[0])) {
         // Go on to Meteor.
         for (let ii = 0; ii < meteorUpgradeListeners.length; ++ii) {
           meteorUpgradeListeners[ii](req, socket, head);
@@ -400,7 +431,7 @@ Meteor.startup(() => {
   // port. For requests to the shell & grains, we redirect to the main
   // port. For static publishing, we serve it.
   //
-  // They are bound to FD #4 and higher.
+  // They are bound to FD #5 and higher.
 
   function getNumberOfAlternatePorts() {
     const numPorts = process.env.PORT.split(',').length;
@@ -430,15 +461,21 @@ Meteor.startup(() => {
   for (let i = 0; i < getNumberOfAlternatePorts(); i++) {
     // Call createServerForSandstorm() to skip our monkey patching.
     const alternatePortServer = Http.createServerForSandstorm(redirectToMeteorOrServeStaticPublishing);
-    alternatePortServer.listen({fd: i + 4});
+    alternatePortServer.listen({ fd: i + 5 });
   }
 
   const dispatchToMeteorOrStaticPublishing = (req, res, next, redirectRatherThanServeShell) => {
+    if (!req.headers.host) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Missing Host header');
+      return;
+    }
+
     const hostname = req.headers.host.split(':')[0];
     if (isSandstormShell(hostname)) {
       // Go on to Meteor, or serve a redirect.
       if (redirectRatherThanServeShell) {
-        res.writeHead(302, {'Location': canonicalizeShellOrWildcardUrl(hostname, req.url)});
+        res.writeHead(302, { 'Location': canonicalizeShellOrWildcardUrl(hostname, req.url) });
         res.end();
         return;
       } else {
@@ -453,7 +490,7 @@ Meteor.startup(() => {
     if (id) {
       // Match!
       if (redirectRatherThanServeShell) {
-        res.writeHead(302, {'Location': canonicalizeShellOrWildcardUrl(hostname, req.url)});
+        res.writeHead(302, { 'Location': canonicalizeShellOrWildcardUrl(hostname, req.url) });
         res.end();
         return;
       }
@@ -461,6 +498,13 @@ Meteor.startup(() => {
       if (id === 'static') {
         // Static assets domain.
         serveStaticAsset(req, res);
+        return;
+      }
+
+      if (id.match(/^selftest-/)) {
+        // Self test domain pattern. Starts w/ hyphen to avoid ambiguity with grain session/static
+        // publishing wildcard hosts.
+        serveSelfTest(req, res);
         return;
       }
 
@@ -486,7 +530,7 @@ Meteor.startup(() => {
           } else {
             // We don't have a handler for this publicId, so look it up in the grain DB.
             return inMeteor(() => {
-              const grain = Grains.findOne({publicId: publicId}, {fields: {_id: 1}});
+              const grain = Grains.findOne({ publicId: publicId }, { fields: { _id: 1 } });
               if (!grain) {
                 throw new Meteor.Error(404, 'No such grain for public ID: ' + publicId);
               }
@@ -517,16 +561,17 @@ Meteor.startup(() => {
 });
 
 const errorTxtMapping = {};
-errorTxtMapping[Dns.NOTFOUND] = '<br>\n' +
-    'If you were trying to connect this address to a Sandstorm app hosted at this server,<br>\n' +
-    'you either have not set your DNS TXT records correctly or the DNS cache has not<br>\n' +
-    'updated yet (may take a while).<br>\n';
+errorTxtMapping[Dns.NOTFOUND] = '<p>' +
+    'If you were trying to configure static publishing for a blog or website, powered ' +
+    'by a Sandstorm app hosted at this server, you either have not added DNS TXT records ' +
+    'correctly, or the DNS cache has not updated yet (may take a while, like 5 minutes to one ' +
+    'hour).</p>';
 errorTxtMapping[Dns.NODATA] = errorTxtMapping[Dns.NOTFOUND];
-errorTxtMapping[Dns.TIMEOUT] = '<br>\n' +
-    'The DNS query has timed out, which may be a sign of poorly configured DNS on the server.<br>\n';
-errorTxtMapping[Dns.CONNREFUSED] = '<br>\n' +
-    'The DNS server refused the connection, which means either your DNS server is down/unreachable,<br>\n' +
-    'or the server has misconfigured their DNS.<br>\n';
+errorTxtMapping[Dns.TIMEOUT] = '<p>' +
+    'The DNS query has timed out, which may be a sign of poorly configured DNS on the server.</p>';
+errorTxtMapping[Dns.CONNREFUSED] = '<p>' +
+    'The DNS server refused the connection, which means either your DNS server is down/unreachable, ' +
+    'or the server has misconfigured their DNS.</p>';
 
 function lookupPublicIdFromDns(hostname) {
   // Given a hostname, determine its public ID.
@@ -552,20 +597,26 @@ function lookupPublicIdFromDns(hostname) {
       if (err) {
         const errorMsg = errorTxtMapping[err.code] || '';
         const error = new Error(
-            'Error looking up DNS TXT records for host "' + hostname + '": ' + err.message);
+          'Error looking up DNS TXT records for host "' + hostname + '": ' + err.message);
         error.htmlMessage =
-          '<p>Error looking up DNS TXT records for host "' + hostname + '": ' + err.message + '<br>\n' +
-          '<br>\n' +
-          'This Sandstorm server\'s main interface is at: <a href=\'' + process.env.ROOT_URL + '\'>' +
-          process.env.ROOT_URL + '</a><br>\n' +
+          '<style type="text/css">h2, h3, p { max-width: 600px; }</style>' +
+          '<h2>Sandstorm static publishing needs further configuration (or wrong URL)</h2>' +
           errorMsg +
-          '<br>\n' +
-          'If you are the server admin and want to use this address as the main interface,<br>\n' +
-          'edit /opt/sandstorm/sandstorm.conf, modify the BASE_URL setting, and restart.<br>\n' +
-          '<br>\n' +
-          'If you got here after trying to log in via OAuth (e.g. through Github or Google),<br>\n' +
-          'the problem is probably that the OAuth callback URL was set wrong. You need to<br>\n' +
-          'update it through the respective login provider\'s management console.</p>';
+          '<p>To visit this Sandstorm server\'s main interface, go to: <a href=\'' + process.env.ROOT_URL + '\'>' +
+          process.env.ROOT_URL + '</a></p>' +
+          '<h3>DNS details</h3>' +
+          '<p>Error looking up DNS TXT records for host "' + hostname + '": ' + err.message + '</p>' +
+          '<p>If you have the <tt>dig</tt> tool, you can run this command to learn more:</p>' +
+          '<p><tt>dig TXT sandstorm-www.' + hostname + '</tt></p>' +
+          '<h3>Changing the server URL, or troubleshooting OAuth login</h3>' +
+          '<p>If you are the server admin and want to use this address as the main interface, ' +
+          'edit /opt/sandstorm/sandstorm.conf, modify the BASE_URL setting, and restart ' +
+          'Sandstorm.</p>' +
+          '<p>If you got here after trying to log in via OAuth (e.g. through GitHub or Google), ' +
+          'the problem is probably that the OAuth callback URL was set wrong. You need to ' +
+          'update it through the respective login provider\'s management console. The ' +
+          'easiest way to do that is to run <tt>sudo sandstorm admin-token</tt>, then ' +
+          'reconfigure the OAuth provider.</p>';
         error.httpErrorCode = (_.contains(['ENOTFOUND', 'ENODATA'], err.code)) ? 404 : 500;
         reject(error);
       } else if (records.length !== 1) {

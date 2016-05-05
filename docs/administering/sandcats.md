@@ -18,6 +18,9 @@ In more detail:
 
 * It's an optional service. Keep reading this page to learn how to stop using it.
 
+* It points at your server's public (globally routable) IP address, which it auto-detects. Read
+  elsewhere about setting up Sandstorm to use an [internal IP address](faq.md#how-do-i-use-sandstorm-with-an-internal-ip-address).
+
 The purpose is to help people who run their own server have a working hostname and HTTPS (TLS/SSL)
 certificate without having to think hard about the domain name system or public key infrastructure.
 
@@ -95,7 +98,7 @@ Remove that line entirely, then save and quit your editor. Run `sudo service san
 cause Sandstorm to notice your changes to its configuration file.
 
 That will disable the sandcats-related functionality in your Sandstorm server on your system. This
-means your domain will stop automatically its IP address.
+means your domain will stop automatically updating its IP address.
 
 Note that this does not delete any domains you registered. That's OK with us; from our perspective,
 there's no need to email us to delete your domain.

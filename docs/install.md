@@ -1,6 +1,6 @@
-# Installation
+# Installation and removal
 
-There are many options for installing Sandstorm with various trade-offs. Choose the one that is most comfortable for you.
+There are many options for installing Sandstorm with various trade-offs. Choose the one that is most comfortable for you. This document also covers [uninstallation](#uninstall).
 
 Sandstorm requires Linux x86_64, with kernel version 3.13 or later.
 
@@ -11,6 +11,25 @@ The easiest way to install Sandstorm is by running:
 ```bash
 curl https://install.sandstorm.io | bash
 ```
+
+If you accept the defaults, this will:
+
+- Create a directory, `/opt/sandstorm`, that contains Sandstorm and all data created within Sandstorm. Therefore, this is the most essential directory when performing [backups](administering/backups.md).
+- Download (and verify) the current release of Sandstorm, place it into `/opt/sandstorm`, and enable auto-updates.
+- Create two symbolic links in `/usr/local/bin` to add `spk` and `sandstorm` to your $PATH.
+- Create a service (using `sysvinit` or `systemd`) to make Sandstorm start on system boot.
+- Enable free HTTPS and dynamic DNS if you choose to use a [sandcats.io](administering/sandcats.md) subdomain, which we hope you do!
+- Run a small process as root for containerization and binding to ports, and run the rest of Sandstorm as a non-root user.
+- Listen on port 80 & 443 if available, otherwise a different port.
+
+You can jump straight into the install by running:
+
+```bash
+curl https://install.sandstorm.io | bash
+```
+You can also read [technical documentation on how the install script
+works](administering/install-script.md), including non-interactive modes, or learn [how to
+administer Sandstorm](administering.md) once it is installed.
 
 ## Option 2: GitHub-verified install
 
@@ -99,7 +118,6 @@ Please install the following:
 * `unzip`
 * `strace`
 * `curl`
-* ImageMagick
 * discount (markdown parser)
 * [Clang compiler](http://clang.llvm.org/) version 3.4 or better
 * [Meteor](http://meteor.com)
@@ -107,13 +125,13 @@ Please install the following:
 On Debian or Ubuntu, you should be able to get all these with:
 
     sudo apt-get install build-essential libcap-dev xz-utils zip \
-        unzip imagemagick strace curl clang-3.4 discount git
+        unzip strace curl clang-3.4 discount git
     curl https://install.meteor.com/ | sh
 
 ### Get the source code
 
 Get the source code from the git repository:
-    
+
     git clone https://github.com/sandstorm-io/sandstorm.git
 
 ### Building / installing the binaries
@@ -160,7 +178,7 @@ Later, when you are done hacking, you may want to restart the installed front-en
 
 ### Hacking on the C++
 
-If you're going to edit C++, you will want to install [Ekam](https://github.com/sandstorm-io/ekam), the build system used by Sandstorm. Be sure to read Ekam's wiki to understand how it works.
+If you're going to edit C++, you will want to install [Ekam](https://github.com/sandstorm-io/ekam), the build system used by Sandstorm. Be sure to read [how Ekam works](https://github.com/sandstorm-io/ekam).
 
 Once `ekam` is in your path, you can use `make continuous` in order to start an Ekam continuous build of Sandstorm. While this build is running, you can also run other `make` commands in a separate window. This will automatically synchronize with your continuous build rather than starting a second build.
 
@@ -172,19 +190,74 @@ If you suspect you'll be hacking on Sandstorm's dependencies as well, you may wa
 
 ## Tips
 
-* If installing Sandstorm under LXC / Docker, you will need to choose the option to
-  install as a non-root user. Unfortunately, this means the development tools will not
-  work. This is due to the interaction between Sandstorm and Docker's use of Linux
-  containerization features and missing features in the Linux kernel which we
-  hope will be fixed eventually. For non-development purposes, Sandstorm should run just fine
-  under Docker.
-* If you want to run on port 80, we recommend setting up an [nginx](http://nginx.org/) reverse
-  proxy rather than trying to get Node to open port 80 directly.  Make sure to configure
-  [WebSocket forwarding](http://nginx.org/en/docs/http/websocket.html), which requires nginx
-  1.3.13 or better.
-* If you want SSL, then you will definitely need an nginx proxy (or something equivalent). You will
-  further need to use a wildcard certificate.
+* If installing Sandstorm under LXC / Docker, you will need to choose the option to install as a
+  non-root user. Unfortunately, this means the development tools will not work. This is due to the
+  interaction between Sandstorm and Docker's use of Linux containerization features and missing
+  features in the Linux kernel which we hope will be fixed eventually. For non-development purposes,
+  Sandstorm should run just fine under Docker.
 
-For reference,
-[nginx-example.conf](https://github.com/sandstorm-io/sandstorm/tree/master/nginx-example.conf)
-contains the http server part of nginx config used by Sandstorm Alpha.
+* If you want to run on port 80, set `PORT=80` in your `sandstorm.conf` or look into a [reverse
+  proxy](administering/reverse-proxy.md).
+
+* If you want HTTPS/SSL, consider using our [free SSL certificate & dynamic DNS service](administering/ssl.md) or
+  setting up a [reverse proxy](administering/reverse-proxy.md).
+
+# Uninstall
+
+If you installed Sandstorm with default options, the following actions will fully remove
+Sandstorm. If you customized the install, you'll need to change these commands accordingly.
+
+If you want to _change settings_, you can edit `/opt/sandstorm/sandstorm.conf`.
+
+- Stop the service.
+
+```bash
+sudo sandstorm stop
+sudo service sandstorm stop
+```
+
+- Remove the service file(s).
+
+For systemd:
+
+```bash
+sudo systemctl disable sandstorm.service
+sudo rm -f /etc/systemd/system/sandstorm.service
+sudo systemctl daemon-reload
+```
+
+For sysvinit:
+
+```bash
+sudo update-rc.d sandstorm remove
+sudo rm -f /etc/init.d/sandstorm
+```
+
+- Remove the two symlinks Sandstorm creates.
+
+```bash
+sudo rm -f /usr/local/bin/spk
+sudo rm -f /usr/local/bin/sandstorm
+```
+
+- Edit `/etc/sysctl.conf` to remove any changes. `install.sh` can optionally customize that file. It
+  will leave behind a comment indicating that it did so, if it did so.
+
+```bash
+sudo nano /etc/sysctl.conf
+```
+
+- Remove the sandstorm user ID and group ID.
+
+```bash
+sudo groupdel sandstorm
+sudo userdel sandstorm
+
+```
+- Finally, remove Sandstorm and all its files.
+
+```bash
+sudo rm -rf /opt/sandstorm
+```
+
+Thanks for using Sandstorm!

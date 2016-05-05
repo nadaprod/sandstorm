@@ -20,7 +20,7 @@
       <button class="toggle-uninstall {{#unless actionsCount}}hide{{/unless}}" title="Uninstall an app">Uninstall...</button>
       {{/if}}
       <button class="upload-button {{#if searching}}hide{{/if}}">Upload...
-        <input type="file" style="display:none">
+        <input type="file" style="display:none" accept=".spk">
       </button>
     </div>
 
@@ -63,6 +63,14 @@
     </a>
     {{/if}}
     {{/each}}
+    {{#if searching}}
+    {{#unless apps}}
+    <p class="no-matching-app">
+      You have no installed apps with that name. Try
+      <a href="{{appMarketUrl}}">searching on the app market &raquo;</a>
+    </p>
+    {{/unless}}
+    {{/if}}
   </div>
   {{else}}
     {{#if Template.subscriptionsReady}}
