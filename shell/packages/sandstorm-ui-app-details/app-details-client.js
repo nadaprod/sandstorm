@@ -1,18 +1,3 @@
-SandstormAppDetails = function (db, quotaEnforcer, appId) {
-  this._db = db;
-  this._quotaEnforcer = quotaEnforcer;
-  this._appId = appId;
-
-  this._filter = new ReactiveVar("");
-  this._sortOrder = new ReactiveVar([]);
-  this._staticHost = db.makeWildcardHost("static");
-
-  this._keybaseSubscription = undefined;
-
-  this._newGrainIsLaunching = new ReactiveVar(false);
-  this._showPublisherDetails = new ReactiveVar(false);
-};
-
 const latestPackageForAppId = function (db, appId) {
   // Dev apps mask current package version.
   const devPackage = db.collections.devPackages.findOne({ appId: appId });
@@ -59,14 +44,17 @@ const appGrains = function (db, appId) {
                   function (grain) {return grain.appId === appId; });
 };
 
-const filteredSortedGrains = function (db, staticAssetHost, appId, appTitle, filterText) {
+const filteredSortedGrains = function (db, staticAssetHost, appId, appTitle, filterText, viewingTrash) {
   const pkg = latestPackageForAppId(db, appId);
 
-  const grainsMatchingAppId = appGrains(db, appId);
+  const grainsMatchingAppId = appGrains(db, appId)
+        .filter((grain) => !!grain.trashed == viewingTrash);
   const tokensForGrain = _.groupBy(db.currentUserApiTokens().fetch(), "grainId");
   const grainIdsForApiTokens = Object.keys(tokensForGrain);
   // grainTokens is a list of all apiTokens, but guarantees at most one token per grain
-  const grainTokens = grainIdsForApiTokens.map(function (grainId) { return tokensForGrain[grainId][0]; });
+  const grainTokens = grainIdsForApiTokens
+        .map(function (grainId) { return tokensForGrain[grainId][0]; })
+      .filter((token) => !!token.trashed == viewingTrash);
 
   const grainTokensMatchingAppTitle = grainTokens.filter(function (token) {
     const tokenMetadata = token.owner.user.denormalizedGrainMetadata;
@@ -91,6 +79,11 @@ const pgpFingerprint = function (pkg) {
 };
 
 Template.sandstormAppDetailsPage.onCreated(function () {
+  this._filter = new ReactiveVar("");
+  this._keybaseSubscription = undefined;
+  this._newGrainIsLaunching = new ReactiveVar(false);
+  this._showPublisherDetails = new ReactiveVar(false);
+
   const ref = Template.instance().data;
   this.autorun(() => {
     const pkg = latestPackageForAppId(ref._db, ref._appId);
@@ -279,8 +272,7 @@ Template.sandstormAppDetailsPage.helpers({
   },
 
   newGrainIsLoading: function () {
-    const ref = Template.instance().data;
-    return ref._newGrainIsLaunching.get();
+    return Template.instance()._newGrainIsLaunching.get();
   },
 
   appTitle: function () {
@@ -289,8 +281,10 @@ Template.sandstormAppDetailsPage.helpers({
   },
 
   actions: function () {
-    const ref = Template.instance().data;
-    if (ref._filter.get()) return []; // Hide actions when searching.
+    const instance = Template.instance();
+    const ref = instance.data;
+    if (instance._filter.get()) return [];    // Hide actions when searching.
+    if (ref.viewingTrash) return []; // Hide actions when viewing trash.
     const pkg = latestPackageForAppId(ref._db, ref._appId);
     if (!pkg) return []; // No package means no actions.
     const appTitle = getAppTitle(ref);
@@ -299,7 +293,7 @@ Template.sandstormAppDetailsPage.helpers({
       const actions = [];
       const launchDevAction = function (actionIndex) {
         ref._quotaEnforcer.ifQuotaAvailable(function () {
-          ref._newGrainIsLaunching.set(true);
+          instance._newGrainIsLaunching.set(true);
           // TODO(soon): this calls a global function in shell.js, refactor
           launchAndEnterGrainByActionId(undefined, pkg._id, actionIndex);
         });
@@ -327,7 +321,7 @@ Template.sandstormAppDetailsPage.helpers({
               buttonText: "Create new " + SandstormDb.nounPhraseForActionAndAppTitle(a, appTitle),
               onClick: function () {
                 ref._quotaEnforcer.ifQuotaAvailable(function () {
-                  ref._newGrainIsLaunching.set(true);
+                  instance._newGrainIsLaunching.set(true);
                   // TODO(soon): this calls a global function in shell.js, refactor
                   launchAndEnterGrainByActionId(a._id);
                 });
@@ -346,8 +340,21 @@ Template.sandstormAppDetailsPage.helpers({
   },
 
   filteredSortedGrains: function () {
-    const ref = Template.instance().data;
-    return filteredSortedGrains(ref._db, ref._staticHost, ref._appId, getAppTitle(ref), ref._filter.get());
+    const instance = Template.instance();
+    const ref = instance.data;
+    return filteredSortedGrains(ref._db, ref._staticHost, ref._appId, getAppTitle(ref),
+                                instance._filter.get(), ref.viewingTrash);
+  },
+
+  filteredSortedTrashedGrains: function () {
+    const instance = Template.instance();
+    const ref = instance.data;
+    return filteredSortedGrains(ref._db, ref._staticHost, ref._appId, getAppTitle(ref),
+                                instance._filter.get(), true);
+  },
+
+  isFiltering: function () {
+    return !!Template.instance()._filter.get();
   },
 
   lastUpdated: function () {
@@ -361,8 +368,11 @@ Template.sandstormAppDetailsPage.helpers({
   },
 
   showPublisherDetails: function () {
-    const ref = Template.instance().data;
-    return ref._showPublisherDetails.get();
+    return Template.instance()._showPublisherDetails.get();
+  },
+
+  viewingTrash: function () {
+    return Template.instance().data.viewingTrash;
   },
 
   keybaseProfile: function () {
@@ -405,6 +415,11 @@ Template.sandstormAppDetailsPage.helpers({
            grain.packageId !== pkg._id);
     });
   },
+
+  bulkActionButtons: function () {
+    const ref = Template.instance().data;
+    return SandstormGrainListPage.bulkActionButtons(ref.viewingTrash);
+  },
 });
 Template.sandstormAppDetailsPage.events({
   "click .restore-button": function (event, instance) {
@@ -422,15 +437,15 @@ Template.sandstormAppDetailsPage.events({
   },
 
   "input .search-bar": function (event) {
-    Template.instance().data._filter.set(event.target.value);
+    Template.instance()._filter.set(event.target.value);
   },
 
-  "keypress .search-bar": function (event) {
+  "keypress .search-bar": function (event, instance) {
     const ref = Template.instance().data;
     if (event.keyCode === 13) {
       // Enter pressed.  If a single grain is shown, open it.
       const grains = filteredSortedGrains(ref._db, ref._staticHost, ref._appId,
-                                        getAppTitle(ref), ref._filter.get());
+                                          getAppTitle(ref), instance._filter.get(), ref.viewingTrash);
       if (grains.length === 1) {
         // Unique grain found with current filter.  Activate it!
         const grainId = grains[0]._id;
@@ -453,14 +468,19 @@ Template.sandstormAppDetailsPage.events({
     }
   },
 
-  "click .show-authorship-button": function (event) {
-    const ref = Template.instance().data;
-    ref._showPublisherDetails.set(!ref._showPublisherDetails.get());
+  "click .show-authorship-button": function (event, instance) {
+    instance._showPublisherDetails.set(!instance._showPublisherDetails.get());
   },
 
   "click .upgradeGrains": function (event) {
     const ref = Template.instance().data;
     const pkg = latestPackageForAppId(ref._db, ref._appId);
     Meteor.call("upgradeGrains", ref._appId, pkg.manifest.appVersion, pkg._id);
+  },
+
+  "click button.toggle-show-trash": function (event, instance) {
+    const ref = Template.instance().data;
+    const params = ref.viewingTrash ? {} : { hash: "trash" };
+    Router.go("appDetails", { appId:  ref._appId }, params);
   },
 });

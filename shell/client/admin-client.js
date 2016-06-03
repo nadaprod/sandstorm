@@ -437,10 +437,6 @@ Template.adminSettings.helpers({
     return globalDb.getSamlPublicCert();
   },
 
-  smtpUrl: function () {
-    return Iron.controller().state.get("smtpUrl");
-  },
-
   smtpConfig() {
     const config = Settings.findOne({ _id: "smtpConfig" });
     return config && config.value;
@@ -747,7 +743,7 @@ Template.adminLog.helpers({
     // jscs:disable requireCamelCaseOrUpperCaseIdentifiers
     return AnsiUp.ansi_to_html(AdminLog.find({}, { $sort: { _id: 1 } })
             .map(function (entry) { return entry.text; })
-            .join(""), { use_classes:true });
+            .join(""), { use_classes: true });
     // jscs:enable requireCamelCaseOrUpperCaseIdentifiers
   },
 });
@@ -1050,21 +1046,9 @@ Template.featureKeyUploadForm.helpers({
   },
 });
 
-Template.adminFeatureKey.onCreated(function () {
-  this.showForm = new ReactiveVar(false);
-});
-
-Template.adminFeatureKey.events({
-  "click button.feature-key-upload-button": function (evt) {
-    Template.instance().showForm.set(true);
-  },
-
-  "click button.feature-key-delete-button": function (evt) {
-    const state = Iron.controller().state;
-    const token = state.get("token");
-    if (window.confirm("Delete feature key? This will disable Sandstorm for Work features!")) {
-      Meteor.call("submitFeatureKey", token, null);
-    }
+Template.adminFeatureKey.helpers({
+  currentFeatureKey: function () {
+    return globalDb.collections.featureKey.findOne();
   },
 });
 
@@ -1084,22 +1068,7 @@ Template.adminFeatureKeyPage.helpers({
   },
 });
 
-Template.adminFeatureKey.helpers({
-  currentFeatureKey: function () {
-    return globalDb.collections.featureKey.findOne();
-  },
-
-  showForm: function () {
-    return Template.instance().showForm.get();
-  },
-
-  hideFormCb: function () {
-    const instance = Template.instance();
-    return () => {
-      instance.showForm.set(false);
-    };
-  },
-
+Template.adminFeatureKeyDetails.helpers({
   computeValidity: function (featureKey) {
     const nowSec = Date.now() / 1000;
     const expires = parseInt(featureKey.expires);
@@ -1136,6 +1105,39 @@ Template.adminFeatureKey.helpers({
     d.setTime(parseInt(stringSecondsSinceEpoch) * 1000);
 
     return MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+  },
+});
+
+Template.adminFeatureKeyModifyForm.onCreated(function () {
+  this.showForm = new ReactiveVar(false);
+});
+
+Template.adminFeatureKeyModifyForm.helpers({
+  showForm: function () {
+    return Template.instance().showForm.get();
+  },
+
+  hideFormCb: function () {
+    const instance = Template.instance();
+    return () => {
+      instance.showForm.set(false);
+    };
+  },
+});
+
+Template.adminFeatureKeyModifyForm.events({
+  "submit .feature-key-modify-form"(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    Template.instance().showForm.set(true);
+  },
+
+  "click button.feature-key-delete-button"(evt) {
+    const state = Iron.controller().state;
+    const token = state.get("token");
+    if (window.confirm("Delete feature key? This will disable Sandstorm for Work features!")) {
+      Meteor.call("submitFeatureKey", token, null);
+    }
   },
 });
 
@@ -1211,39 +1213,39 @@ const adminRoute = RouteController.extend({
 
 Router.map(function () {
   this.route("adminSettings", {
-    path: "/admin/settings/:_token?",
+    path: "/admin-old/settings/:_token?",
     controller: adminRoute,
   });
   this.route("adminUsers", {
-    path: "/admin/users/:_token?",
+    path: "/admin-old/users/:_token?",
     controller: adminRoute,
   });
   this.route("adminStats", {
-    path: "/admin/stats/:_token?",
+    path: "/admin-old/stats/:_token?",
     controller: adminRoute,
   });
   this.route("adminLog", {
-    path: "/admin/log/:_token?",
+    path: "/admin-old/log/:_token?",
     controller: adminRoute,
   });
   this.route("adminInvites", {
-    path: "/admin/invites/:_token?",
+    path: "/admin-old/invites/:_token?",
     controller: adminRoute,
   });
   this.route("adminCaps", {
-    path: "/admin/capabilities/:_token?",
+    path: "/admin-old/capabilities/:_token?",
     controller: adminRoute,
   });
   this.route("adminAdvanced", {
-    path: "/admin/advanced/:_token?",
+    path: "/admin-old/advanced/:_token?",
     controller: adminRoute,
   });
   this.route("adminFeatureKeyPage", {
-    path: "/admin/features/:_token?",
+    path: "/admin-old/features/:_token?",
     controller: adminRoute,
   });
   this.route("adminOld", {
-    path: "/admin/:_token?",
+    path: "/admin-old/:_token?",
     action: function () {
       this.redirect("adminSettings", this.params);
     },
@@ -1258,119 +1260,144 @@ const newAdminRoute = RouteController.extend({
       Meteor.subscribe("adminServiceConfiguration", this.params._token),
       Meteor.subscribe("featureKey", true, this.params._token),
     ];
-    if (this.params._token) {
-      subs.push(Meteor.subscribe("adminToken", this.params._token));
-    }
 
     return subs;
   },
 
   data: function () {
-    const adminToken = AdminToken.findOne();
+    const wildcardHostSeemsBroken = (
+      Session.get("alreadyTestedWildcardHost") && !Session.get("wildcardHostWorks")
+    );
+    const websocketSeemsBroken = (
+      Session.get("websocketSeemsBroken")
+    );
     return {
-      settings: Settings.find(),
-      token: this.params._token,
-      isUserPermitted: isAdmin() || (adminToken && adminToken.tokenIsValid),
+      isUserPermitted: isAdmin(),
+      wildcardHostSeemsBroken,
+      websocketSeemsBroken,
     };
   },
 
   action: function () {
-    // Test the WILDCARD_HOST for sanity.
-    Tracker.nonreactive(() => {
+    const testWebsocket = function () {
+      if (Meteor &&
+          Meteor.connection &&
+          Meteor.connection._stream &&
+          Meteor.connection._stream.socket &&
+          Meteor.connection._stream.socket.protocol &&
+          Meteor.connection._stream.socket.protocol !== "websocket") {
+        Session.set("websocketSeemsBroken", true);
+      } else {
+        Session.set("websocketSeemsBroken", false);
+      }
+    };
+
+    const testWildcardHost = function () {
       if (Session.get("alreadyTestedWildcardHost")) {
         return;
       }
 
-      HTTP.call("GET", "//" + makeWildcardHost("selftest-" + Random.hexString(20)),
-                { timeout: 4000 }, (error, response) => {
-                  Session.set("alreadyTestedWildcardHost", true);
-                  let looksGood;
-                  if (error) {
-                    looksGood = false;
-                  } else {
-                    if (response.statusCode === 200) {
-                      looksGood = true;
-                    } else {
-                      console.log("Surpring status code from self test domain", response.statusCode);
-                      looksGood = false;
-                    }
-                  }
-
-                  Session.set("wildcardHostWorks", looksGood);
-                });
-    });
-
-    const state = this.state;
-    Meteor.call("getSmtpUrl", this.params._token, function (error, result) {
-      state.set("smtpUrl", result);
-    });
-
-    const user = Meteor.user();
-    if (user && user.loginIdentities) {
-      if (this.params._token) {
-        if (!user.signupKey || !user.isAdmin) {
-          Meteor.call("signUpAsAdmin", this.params._token);
-        } else if (user.isAdmin) {
-          // We don't need the token. Redirect to the current route, minus the token parameter.
-          Router.go(this.route.getName(), {}, _.pick(this.params, "query", "hash"));
-        }
+      if (Session.get("alreadyBeganTestingWildcardHost")) {
+        return;
       }
-    }
 
-    resetResult(state);
-    state.set("configurationServiceName", null);
-    state.set("token", this.params._token);
+      Session.set("alreadyBeganTestingWildcardHost", true);
+
+      HTTP.call(
+        "GET", "//" + makeWildcardHost("selftest-" + Random.hexString(20)),
+        { timeout: 30 * 1000 }, (error, response) => {
+          Session.set("alreadyTestedWildcardHost", true);
+          let looksGood;
+          if (error) {
+            looksGood = false;
+            console.error("Sandstorm WILDCARD_HOST self-test failed. Details:", error);
+            console.log(
+              "Look here in the JS console, above or below this text, for further " +
+                "details provided by your browser.  starting with selftest-*.");
+            console.log(
+              "See also docs: https://docs.sandstorm.io/en/latest/administering/faq/#why-do-i-see-an-error-when-i-try-to-launch-an-app-even-when-the-sandstorm-interface-works-fine");
+            console.log(
+              "Slow DNS or intermittent Internet connectivity can cause this message " +
+                "to appear unnecessarily; in that case, reloading the page should make " +
+                "it go away.");
+          } else {
+            if (response.statusCode === 200) {
+              looksGood = true;
+            } else {
+              console.log("Surpring status code from self test domain", response.statusCode);
+              looksGood = false;
+            }
+          }
+
+          Session.set("wildcardHostWorks", looksGood);
+        });
+    };
+
+    // Run self-tests once.
+    Tracker.nonreactive(() => {
+      testWildcardHost();
+      testWebsocket();
+    });
+
     this.render();
   },
 });
 
 Router.map(function () {
+  this.route("newAdminRoot", {
+    path: "/admin",
+    controller: newAdminRoute,
+  });
   this.route("newAdminIdentity", {
-    path: "/admin-new/identity",
+    path: "/admin/identity",
     controller: newAdminRoute,
   });
   this.route("newAdminEmailConfig", {
-    path: "/admin-new/email",
+    path: "/admin/email",
     controller: newAdminRoute,
   });
   this.route("newAdminUsers", {
-    path: "/admin-new/users",
+    path: "/admin/users",
     controller: newAdminRoute,
   });
   this.route("newAdminUserInvite", {
-    path: "/admin-new/users/invite",
+    path: "/admin/users/invite",
     controller: newAdminRoute,
   });
   this.route("newAdminUserDetails", {
-    path: "/admin-new/users/:userId",
+    path: "/admin/users/:userId",
     controller: newAdminRoute,
   });
   this.route("newAdminAppSources", {
-    path: "/admin-new/app-sources",
+    path: "/admin/app-sources",
     controller: newAdminRoute,
   });
   this.route("newAdminMaintenance", {
-    path: "/admin-new/maintenance",
+    path: "/admin/maintenance",
     controller: newAdminRoute,
   });
   this.route("newAdminStatus", {
-    path: "/admin-new/status",
+    path: "/admin/status",
+    controller: newAdminRoute,
+  });
+  this.route("newAdminPersonalization", {
+    path: "/admin/personalization",
     controller: newAdminRoute,
   });
   this.route("newAdminNetworkCapabilities", {
-    path: "/admin-new/network-capabilities",
+    path: "/admin/network-capabilities",
     controller: newAdminRoute,
   });
   this.route("newAdminStats", {
-    path: "/admin-new/stats",
+    path: "/admin/stats",
     controller: newAdminRoute,
   });
   this.route("newAdminFeatureKey", {
-    path: "/admin-new/feature-key",
+    path: "/admin/feature-key",
     controller: newAdminRoute,
   });
   this.route("newAdminOrganization", {
-    path: "/admin-new/organization",
+    path: "/admin/organization",
     controller: newAdminRoute,
   });
 });

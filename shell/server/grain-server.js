@@ -122,11 +122,11 @@ Meteor.publish("tokenInfo", function (token) {
         let metadata = apiToken.owner.user.denormalizedGrainMetadata;
         if (identity && metadata) {
           SandstormDb.fillInLoginId(identity);
-          this.added("tokenInfo", token,
-                     { identityOwner: _.pick(identity, "_id", "profile", "loginId"),
-                       grainId: grainId,
-                       grainMetadata: metadata,
-                     });
+          this.added("tokenInfo", token, {
+            identityOwner: _.pick(identity, "_id", "profile", "loginId"),
+            grainId: grainId,
+            grainMetadata: metadata,
+          });
         } else {
           this.added("tokenInfo", token, { invalidToken: true });
         }
@@ -134,8 +134,10 @@ Meteor.publish("tokenInfo", function (token) {
         if (this.userId) {
           const user = Meteor.users.findOne({ _id: this.userId });
           const identityIds = SandstormDb.getUserIdentityIds(user);
-          const childToken = ApiTokens.findOne({ "owner.user.identityId": { $in: identityIds },
-                                                 parentToken: apiToken._id, });
+          const childToken = ApiTokens.findOne({
+            "owner.user.identityId": { $in: identityIds },
+            parentToken: apiToken._id,
+          });
           if (childToken || this.userId === grain.userId ||
               identityIds.indexOf(apiToken.identityId) >= 0) {
             this.added("tokenInfo", token, { alreadyRedeemed: true, grainId: apiToken.grainId, });
@@ -157,10 +159,11 @@ Meteor.publish("tokenInfo", function (token) {
           icon: appIcon,
           appId: appIcon ? undefined : grain.appId,
         };
-        this.added("tokenInfo", token,
-                   { webkey: true,
-                     grainId: grainId,
-                     grainMetadata: denormalizedGrainMetadata, });
+        this.added("tokenInfo", token, {
+          webkey: true,
+          grainId: grainId,
+          grainMetadata: denormalizedGrainMetadata,
+        });
       } else {
         this.added("tokenInfo", token, { invalidToken: true });
       }
@@ -193,10 +196,13 @@ Meteor.publish("requestingAccess", function (grainId) {
       Meteor.users.findOne({ _id: grain.userId }));
 
   const _this = this;
-  const query = ApiTokens.find({ grainId: grainId, identityId: { $in: ownerIdentityIds },
-                                 parentToken: { $exists: false },
-                                 "owner.user.identityId": { $in: identityIds },
-                                 revoked: { $ne: true }, });
+  const query = ApiTokens.find({
+    grainId: grainId,
+    identityId: { $in: ownerIdentityIds },
+    parentToken: { $exists: false },
+    "owner.user.identityId": { $in: identityIds },
+    revoked: { $ne: true },
+  });
   const handle = query.observe({
     added(apiToken) {
       _this.added("grantedAccessRequests",
@@ -267,12 +273,87 @@ Meteor.publish("grainSize", function (grainId) {
   });
 });
 
+const GRAIN_DELETION_MS = 1000 * 60 * 60 * 24 * 30; // thirty days
+SandstormDb.periodicCleanup(86400000, () => {
+  const trashExpiration = new Date(Date.now() - GRAIN_DELETION_MS);
+  globalDb.removeApiTokens({ trashed: { $lt: trashExpiration } });
+  Grains.find({ trashed: { $lt: trashExpiration } }).forEach((grain) => {
+    waitPromise(globalBackend.deleteGrain(grain._id, grain.userId));
+    Grains.remove({ _id: grain._id });
+    globalDb.removeApiTokens({
+      grainId: grain._id,
+      $or: [
+        { owner: { $exists: false } },
+        { owner: { webkey: null } },
+      ],
+    });
+
+    if (grain.lastUsed) {
+      DeleteStats.insert({
+        type: "grain",  // Demo grains can never never get here!
+        lastActive: grain.lastUsed,
+        appId: grain.appId,
+      });
+    }
+
+    Meteor.call("deleteUnusedPackages", grain.appId);
+  });
+});
+
 Meteor.methods({
+  moveGrainsToTrash: function (grainIds) {
+    check(grainIds, [String]);
+
+    if (this.userId) {
+      Grains.update({ userId: { $eq: this.userId },
+                      _id: { $in: grainIds },
+                      trashed: { $exists: false }, },
+                    { $set: { trashed: new Date() } },
+                    { multi: true });
+
+      const identityIds = SandstormDb.getUserIdentityIds(Meteor.user());
+
+      ApiTokens.update({ grainId: { $in: grainIds },
+                        "owner.user.identityId": { $in: identityIds },
+                        trashed: { $exists: false }, },
+                       { $set: { "trashed": new Date() } },
+                       { multi: true });
+    }
+  },
+
+  moveGrainsOutOfTrash: function (grainIds) {
+    check(grainIds, [String]);
+
+    if (this.userId) {
+      Grains.update({ userId: { $eq: this.userId },
+                      _id: { $in: grainIds },
+                      trashed: { $exists: true }, },
+                    { $unset: { trashed: 1 } },
+                    { multi: true });
+
+      const identityIds = SandstormDb.getUserIdentityIds(Meteor.user());
+
+      ApiTokens.update({ grainId: { $in: grainIds },
+                        "owner.user.identityId": { $in: identityIds },
+                        "trashed": { $exists: true }, },
+                       { $unset: { "trashed": 1 } },
+                       { multi: true });
+    }
+  },
+
   deleteGrain: function (grainId) {
     check(grainId, String);
 
     if (this.userId) {
-      const grain = Grains.findOne({ _id: grainId, userId: this.userId });
+      if (!this.isSimulation) {
+        waitPromise(globalBackend.deleteGrain(grainId, this.userId));
+      }
+
+      const grain = Grains.findOne({
+        _id: grainId,
+        userId: this.userId,
+        trashed: { $exists: true },
+      });
       if (grain) {
         Grains.remove(grainId);
         globalDb.removeApiTokens({
@@ -288,7 +369,6 @@ Meteor.methods({
         }
 
         if (!this.isSimulation) {
-          waitPromise(globalBackend.deleteGrain(grainId, this.userId));
           Meteor.call("deleteUnusedPackages", grain.appId);
         }
       }
@@ -296,9 +376,6 @@ Meteor.methods({
   },
 
   forgetGrain: function (grainId, identityId) {
-    // TODO(cleanup): For now we are ignoring `identityId`, but maybe we should expose finer-grained
-    //  forgetting.
-
     check(grainId, String);
     check(identityId, String);
 
@@ -306,9 +383,14 @@ Meteor.methods({
       throw new Meteor.Error(403, "Must be logged in to forget a grain.");
     }
 
-    SandstormDb.getUserIdentityIds(Meteor.user()).forEach(function (identityId) {
-      globalDb.removeApiTokens({ grainId: grainId, "owner.user.identityId": identityId });
-    });
+    if (!globalDb.userHasIdentity(this.userId, identityId)) {
+      throw new Meteor.Error(403, "Current user does not have the identity " + identityId);
+    }
+
+    globalDb.removeApiTokens({ grainId: grainId,
+                              "owner.user.identityId": identityId,
+                              "trashed": { $exists: true },
+                            });
   },
 
   updateGrainPreferredIdentity: function (grainId, identityId) {
@@ -356,11 +438,15 @@ Meteor.methods({
             if (token.owner.user.upstreamTitle === newTitle) {
               // User renamed grain to match upstream title. Act like they never renamed it at
               // all.
-              ApiTokens.update({ grainId: grainId, "owner.user.identityId": identityId },
-                               { $set: { "owner.user.title": newTitle },
-                                 $unset: { "owner.user.upstreamTitle": 1, "owner.user.renamed": 1 },
-                               },
-                               { multi: true });
+              ApiTokens.update({
+                grainId: grainId,
+                "owner.user.identityId": identityId,
+              }, {
+                $set: { "owner.user.title": newTitle },
+                $unset: { "owner.user.upstreamTitle": 1, "owner.user.renamed": 1 },
+              }, {
+                multi: true,
+              });
             } else {
               const modification = {
                 "owner.user.title": newTitle,

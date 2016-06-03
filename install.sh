@@ -369,7 +369,11 @@ rerun_script_as_root() {
   fi
 
   # Don't know how to run the script. Let the user figure it out.
-  REPORT=no fail "E_CANT_SWITCH_TO_ROOT" "Oops, I couldn't figure out how to switch to root. Please re-run the installer as root."
+  REPORT=no fail "E_CANT_SWITCH_TO_ROOT" "ERROR: This script could not detect its own filename, so could not switch to root. \
+Please download a copy and name it 'install.sh' and run that as root, perhaps using sudo. \
+Try this command:
+
+curl https://install.sandstorm.io/ > install.sh && sudo bash install.sh"
 }
 
 assert_on_terminal() {
@@ -535,6 +539,14 @@ enable_userns_sysctl_if_needed() {
 
   local PRINT_USERNS_PROMPT="yes"
   local ACCEPTED_SYSCTL_SWITCH="no"
+  local USE_SYSCTL_D="no"
+  local ENABLE_SYSCTL_STRING="(including in /etc/sysctl.conf)"
+  if [ -d /etc/sysctl.d ] ; then
+    # It's more polite to add drop-in files in /etc/sysctl.d than to modify /etc/sysctl.conf
+    # directly, so do that when possible.
+    USE_SYSCTL_D="yes"
+    ENABLE_SYSCTL_STRING="(including creating /etc/sysctl.d/50-sandstorm.conf)"
+  fi
 
   if [ "yes" = "${ACCEPTED_FULL_SERVER_INSTALL:-}" ] ; then
     PRINT_USERNS_PROMPT="no"
@@ -544,7 +556,7 @@ enable_userns_sysctl_if_needed() {
   if [ "${PRINT_USERNS_PROMPT}" = "yes" ] ; then
     echo "Sandstorm requires sysctl kernel.unprivileged_userns_clone to be enabled."
     echo "Currently, it is not enabled on your system."
-    if prompt-yesno "Shall I enable it for you (including in sysctl.conf)?" yes; then
+    if prompt-yesno "Shall I enable it for you ${ENABLE_SYSCTL_STRING}?" yes; then
       ACCEPTED_SYSCTL_SWITCH="yes"
     fi
   fi
@@ -556,13 +568,17 @@ enable_userns_sysctl_if_needed() {
               "kernel.unprivileged_userns_clone=1' failed. If you are inside docker, please run the" \
               "command manually inside your host and update /etc/sysctl.conf."
 
-    # If that worked, then make the change stick.
-    cat >> /etc/sysctl.conf << __EOF__
+    # If that worked, then make the change stick. Use sysctl.d if present.
+    local SYSCTL_FILENAME="/etc/sysctl.conf"
+    if [ "${USE_SYSCTL_D}" = "yes" ] ; then
+      SYSCTL_FILENAME="/etc/sysctl.d/50-sandstorm.conf"
+    fi
+
+    cat >> "$SYSCTL_FILENAME"  << __EOF__
 
 # Enable non-root users to create sandboxes (needed by Sandstorm).
 kernel.unprivileged_userns_clone = 1
 __EOF__
-
   else
     fail "E_USER_REFUSED_SYSCTL_WRITING" "OK, please enable this option yourself and try again."
   fi
@@ -1103,8 +1119,15 @@ create_server_user_if_needed() {
     return
   fi
 
-  # OK!
-  useradd --system "$SERVER_USER"
+  # OK! Let's proceed.
+  #
+  # useradd comes from the passwd package, whereas adduser is a Debian-specific utility
+  # <https://packages.debian.org/adduser>, so we prefer useradd here. Per the man page for useradd,
+  # USERGROUPS_ENAB in /etc/login.defs controls if useradd will automatically create a group for
+  # this user (the new group would have the same name as the new user). On systems such as OpenSuSE
+  # where that flag is set to false by default, or on systems where the administrator has personally
+  # tuned that flag, we need to provide --user-group to useradd so that it creates the group.
+  useradd --system --user-group "$SERVER_USER"
 
   echo "Note: Sandstorm's storage will only be accessible to the group '$SERVER_USER'."
 
@@ -1532,15 +1555,15 @@ generate_admin_token() {
 print_success() {
   echo ""
   if [ "yes" = "$SANDSTORM_NEEDS_TO_BE_STARTED" ] ; then
-    echo "Setup complete. To start your server now, run:"
+    echo "Installation complete. To start your server now, run:"
     echo "  $DIR/sandstorm start"
-    echo "Once that's done, visit this link to configure it:"
+    echo "Once that's done, visit this link to start using it:"
   else
     echo -n "Your server is now online! "
     if [ "${SANDCATS_HTTPS_SUCCESSFUL}" = "yes" ] ; then
       echo "It should work immediately if you use Chrome."
     fi
-    echo "Visit this link to configure it:"
+    echo "Visit this link to start using it:"
   fi
 
   echo ""
@@ -1549,8 +1572,15 @@ print_success() {
   # when dev accounts are enabled, it is advantageous to not print an admin token URL.
   if [ ! -z "${ADMIN_TOKEN:-}" ] ; then
     echo "  ${BASE_URL:-(unknown; bad config)}/setup/token/$ADMIN_TOKEN"
+    echo ""
+    echo "NOTE: This URL expires in 15 minutes. You can generate a new setup URL by running"
+    echo "'sudo sandstorm admin-token' from the command line."
   else
     echo "  ${BASE_URL:-(unknown; bad config)}/"
+  fi
+  if [ "yes" = "${ALLOW_DEV_ACCOUNTS}" ] ; then
+   echo ""
+   echo "NOTE: Use the passwordless admin account called Alice for convenient dev login (since you have 'dev accounts' enabled)."
   fi
   echo ""
 
@@ -1559,9 +1589,6 @@ print_success() {
     echo "(If your browser shows you an OCSP error, wait 10 minutes for it to auto-resolve"
     echo "and try Chrome until then.)"
   fi
-  echo ""
-  echo "NOTE: This URL expires in 15 minutes. You can generate a new setup URL by running"
-  echo "'sudo sandstorm admin-token' from the command line."
   echo
   echo "To learn how to control the server, run:"
   if [ "yes" = "$CURRENTLY_UID_ZERO" ] ; then

@@ -20,12 +20,12 @@ limitations under the License.
   {{setDocumentTitle}}
 
   {{#sandstormTopbarItem name="title" priority=5 topbar=_topbar}}
-    Account Settings
+    Account settings
   {{/sandstormTopbarItem}}
 
-  <h2>My Account</h2>
+  <h2>My account</h2>
   <div class="identities-editor">
-  <h3 class="title-bar"> Linked Identities </h3>
+  <h3 class="title-bar">Linked identities</h3>
   <div class="identities-tabs">
   {{#unless isLinkingNewIdentity}}
   <ul role="tablist" >
@@ -49,7 +49,11 @@ limitations under the License.
     {{/if}}
   {{/if}}
   {{#unless isLinkingNewIdentity}}
-    <p><button class="account-button logout-other-sessions">Log out all other sessions</button></p>
+    <p>
+      <button class="account-button logout-other-sessions" disabled={{logoutOtherSessionsInFlight}}>
+        Log out all other sessions
+      </button>
+    </p>
   {{/unless}}
   </div><section class="profile">
     {{#each identities}}

@@ -7,15 +7,18 @@ Template.newAdminUserDetailsIdentityTableRow.helpers({
     if (!identity) return [];
 
     const verifiedEmails = SandstormDb.getVerifiedEmails(identity);
-    const emails = verifiedEmails.map((email) => {
-      return {
+    const verifiedEmailSet = {};
+    const emails = [];
+    verifiedEmails.forEach((email) => {
+      verifiedEmailSet[email.email] = true;
+      emails.push({
         email: email.email,
         verified: true,
         primary: email === primaryEmail,
-      };
+      });
     });
 
-    if (identity.unverifiedEmail) {
+    if (identity.unverifiedEmail && !verifiedEmailSet[identity.unverifiedEmail]) {
       emails.push({
         email: identity.unverifiedEmail,
         verified: false,
@@ -29,9 +32,14 @@ Template.newAdminUserDetailsIdentityTableRow.helpers({
 
 const lookupIdentityId = (identityId) => {
   const identity = Meteor.users.findOne({ _id: identityId });
-  SandstormDb.fillInProfileDefaults(identity);
-  SandstormDb.fillInIntrinsicName(identity);
-  SandstormDb.fillInPictureUrl(identity);
+  if (identity) {
+    // Sometimes, DBs lack the corresponding user identity document.
+    // Defensively avoid dereferencing a possibly-undefined identity.
+    SandstormDb.fillInProfileDefaults(identity);
+    SandstormDb.fillInIntrinsicName(identity);
+    SandstormDb.fillInPictureUrl(identity);
+  }
+
   return identity;
 };
 
@@ -137,8 +145,12 @@ Template.newAdminUserDetails.helpers({
     return account && account.isAdmin;
   },
 
-  isSignedUpOrDemo(account) {
+  isPreciselyUser(account) {
     return (!account.isAdmin) && globalDb.isAccountSignedUpOrDemo(account);
+  },
+
+  isPreciselyVisitor(account) {
+    return (!account.isAdmin) && !globalDb.isAccountSignedUpOrDemo(account);
   },
 
   canBeMadeVisitor(account) {

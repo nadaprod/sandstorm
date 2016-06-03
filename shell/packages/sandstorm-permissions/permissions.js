@@ -264,12 +264,13 @@ class RequirementSet {
     for (const grainId in this.permissionsHeldRequirements) {
       for (const identityId in this.permissionsHeldRequirements[grainId]) {
         const permissions = this.permissionsHeldRequirements[grainId][identityId];
-        func({ permissionsHeld:
-               { grainId: grainId,
-                 identityId: identityId,
-                 permissionSet: permissions,
-               },
-             });
+        func({
+          permissionsHeld: {
+            grainId: grainId,
+            identityId: identityId,
+            permissionSet: permissions,
+          },
+        });
       }
     }
   }
@@ -518,7 +519,7 @@ class Context {
     check(grainIds, [String]);
     if (grainIds.length == 0) return; // Nothing to do.
 
-    db.collections.grains.find({ _id: { $in: grainIds } }).forEach((grain) => {
+    db.collections.grains.find({ _id: { $in: grainIds }, trashed: { $exists: false } }).forEach((grain) => {
       this.grains[grain._id] = grain;
       if (!this.userIdentityIds[grain.userId]) {
         this.userIdentityIds[grain.userId] = SandstormDb.getUserIdentityIds(
@@ -527,7 +528,9 @@ class Context {
     });
 
     const query = { grainId: { $in: grainIds },
-                    revoked: { $ne: true }, objectId: { $exists: false }, };
+                    revoked: { $ne: true },
+                    trashed: { $exists: false },
+                    objectId: { $exists: false }, };
     db.collections.apiTokens.find(query).forEach((token) => this.addToken(token));
   }
 
@@ -543,8 +546,11 @@ class Context {
       const permissions = PermissionSet.fromRoleAssignment(edge.role, viewInfo);
       const vertexId = "i:" + edge.identityId;
       forEachPermission(permissions.array, (permissionId) => {
-        this.setToTrueStack.push({ grainId: grainId, vertexId: vertexId,
-                                   permissionId: permissionId, });
+        this.setToTrueStack.push({
+          grainId: grainId,
+          vertexId: vertexId,
+          permissionId: permissionId,
+        });
       });
     });
   }
@@ -833,8 +839,10 @@ class Context {
         while (true) {
           let currentToken = this.tokensById[currentTokenId];
           if (!currentToken && db) {
-            currentToken = db.collections.apiTokens.findOne({ _id: currentTokenId,
-                                                             revoked: { $ne: true }, });
+            currentToken = db.collections.apiTokens.findOne({
+              _id: currentTokenId,
+              revoked: { $ne: true },
+            });
             this.tokensById[currentTokenId] = currentToken;
           }
 
@@ -915,7 +923,9 @@ class Context {
     // This function works by walking backwards in the sharing graph, following this trail of
     // "responsible tokens".
     //
-    // Returns the result as a list of token IDs.
+    // Returns an object with two fields:
+    //    tokenIds: list of IDs of the responsible tokens.
+    //    grainIds: list of IDs of all relevant grains.
 
     check(grainId, String);
     check(vertexId, String);
@@ -942,7 +952,7 @@ class Context {
     const neededTokens = {}; // TokenId -> bool
 
     forEachPermission(this.getPermissions(grainId, vertexId).array, (permissionId) => {
-      stack.push({ grainId: grainId, vertexId: vertexId, permissionId: permissionId });
+      pushVertex(grainId, vertexId, permissionId);
     });
 
     while (stack.length > 0) {
@@ -977,7 +987,7 @@ class Context {
       }
     }
 
-    return Object.keys(neededTokens);
+    return { tokenIds: Object.keys(neededTokens), grainIds: Object.keys(visited) };
   }
 }
 
@@ -1006,6 +1016,7 @@ function computeRelevantTokens(context, grainId, vertexId) {
   check(vertexId, String);
 
   const grain = context.grains[grainId];
+  if (!grain) return { tokenIds: [], ownerEdges: [] };
   const viewInfo = grain.cachedViewInfo || {};
   const ownerIdentityIds = context.userIdentityIds[grain.userId];
 
@@ -1121,10 +1132,15 @@ function computeRelevantTokens(context, grainId, vertexId) {
   };
 }
 
-const vertexPattern = Match.OneOf({ token: Match.ObjectIncluding({ _id: String, grainId: String }) },
-                                  { grain: Match.ObjectIncluding(
-                                    { _id: String,
-                                     identityId: Match.OneOf(String, null, undefined), }), });
+const vertexPattern = Match.OneOf(
+  { token: Match.ObjectIncluding({ _id: String, grainId: String }) },
+  {
+    grain: Match.ObjectIncluding({
+      _id: String,
+      identityId: Match.OneOf(String, null, undefined),
+    }),
+  },
+);
 // A vertex in the sharing graph is a principal, e.g. a user (identity) or a token. Complicating
 // matters, we may have to traverse sharing graphs for multiple grains in the same computation. A
 // token is specific to one grain, but a user of course can have access to multiple grains, so in
@@ -1145,6 +1161,20 @@ SandstormPermissions.mayOpenGrain = function (db, vertex) {
   const emptyPermissions = new PermissionSet([]);
   return !!context.tryToProve(grainId, vertexId, emptyPermissions, db);
 };
+
+class CompoundObserveHandle {
+  constructor() {
+    this._handles = [];
+  }
+
+  push(handle) {
+    this._handles.push(handle);
+  }
+
+  stop() {
+    this._handles.forEach((handle) => handle.stop());
+  }
+}
 
 SandstormPermissions.grainPermissions = function (db, vertex, viewInfo, onInvalidated) {
   // Computes the set of permissions received by `vertex`. Returns an object with a
@@ -1192,53 +1222,70 @@ SandstormPermissions.grainPermissions = function (db, vertex, viewInfo, onInvali
 
     if (!firstPhasePermissions) return { permissions: null };
 
-    const neededTokens = context.getResponsibleTokens(grainId, vertexId);
+    const needed = context.getResponsibleTokens(grainId, vertexId);
+    const neededTokens = needed.tokenIds;
+    const neededGrains = needed.grainIds;
 
     // Phase 2: Now let's verify those permissions.
 
     context.reset();
 
-    if (neededTokens.length > 0) {
-      let invalidated = false;
-      function guardedOnInvalidated() {
-        invalidated = true;
-        if (onInvalidatedActive) {
-          onInvalidated();
-        }
+    let invalidated = false;
+    function guardedOnInvalidated() {
+      const shouldCall = onInvalidatedActive && !invalidated;
+      invalidated = true;
+      if (shouldCall) {
+        onInvalidated();
       }
+    }
 
-      const cursor = db.collections.apiTokens.find({
-        _id: { $in: neededTokens },
-        revoked: { $ne: true },
-        objectId: { $exists: false },
-      });
+    const tokenCursor = db.collections.apiTokens.find({
+      _id: { $in: neededTokens },
+      revoked: { $ne: true },
+      objectId: { $exists: false },
+    });
 
-      if (onInvalidated) {
-        observeHandle = cursor.observe({
-          changed(newApiToken, oldApiToken) {
-            if (!_.isEqual(newApiToken.roleAssignment, oldApiToken.roleAssignment) ||
-                !_.isEqual(newApiToken.revoked, oldApiToken.revoked)) {
-              observeHandle.stop();
-              guardedOnInvalidated();
-            }
-          },
-
-          removed(oldApiToken) {
+    if (onInvalidated) {
+      observeHandle = new CompoundObserveHandle();
+      observeHandle.push(tokenCursor.observe({
+        changed(newApiToken, oldApiToken) {
+          if (newApiToken.trashed ||
+              !_.isEqual(newApiToken.roleAssignment, oldApiToken.roleAssignment) ||
+              !_.isEqual(newApiToken.revoked, oldApiToken.revoked)) {
             observeHandle.stop();
             guardedOnInvalidated();
-          },
-        });
-      }
+          }
+        },
 
-      context.addTokensFromCursor(cursor);
+        removed(oldApiToken) {
+          observeHandle.stop();
+          guardedOnInvalidated();
+        },
+      }));
 
-      // TODO(someday): Also account for linking/unlinking of identities, accounts losing admin
-      //   privileges, and legacy public grains becoming private. Currently we do not call
-      //   `onInvalided()` on such events. We would need to set up more cursor observers.
-    } else {
-      // Don't need to observe anything.
-      observeHandle = { stop() {} };
+      const grainCursor = db.collections.grains.find({ _id: { $in: neededGrains } });
+      observeHandle.push(grainCursor.observe({
+        changed(newGrain, oldGrain) {
+          if (newGrain.trashed ||
+              (!oldGrain.private && newGrain.private)
+             ) {
+            observeHandle.stop();
+            guardedOnInvalidated();
+          }
+        },
+
+        removed(oldGrain) {
+          observeHandle.stop();
+          guardedOnInvalidated();
+        },
+      }));
     }
+
+    context.addTokensFromCursor(tokenCursor);
+
+    // TODO(someday): Also account for linking/unlinking of identities and accounts losing admin
+    //   privileges. Currently we do not call `onInvalided()` on such events. We would need to set
+    //   up more cursor observers.
 
     resultPermissions = context.tryToProve(grainId, vertexId, firstPhasePermissions);
 
@@ -1302,7 +1349,7 @@ SandstormPermissions.downstreamTokens = function (db, root) {
   if (!grain || !grain.private) { return result; }
 
   db.collections.apiTokens.find({ grainId: grainId,
-                                 revoked: { $ne: true }, }).forEach(function (token) {
+                                  revoked: { $ne: true }, }).forEach(function (token) {
     tokensById[token._id] = token;
     if (token.parentToken) {
       if (!tokensByParent[token.parentToken]) {
@@ -1382,18 +1429,28 @@ SandstormPermissions.createNewApiToken = function (db, provider, grainId, petnam
   // explicitly pass in undefined.
   check(provider, Match.OneOf({ identityId: String, accountId: String },
                               { rawParentToken: Match.OneOf(String, Buffer) }));
-  check(owner, Match.OneOf({ webkey: Match.OneOf(null,
-                                                 { forSharing: Boolean,
-                                                   expiresIfUnusedDuration: Match.Optional(Number),
-                                                 }), },
-                           { user: { identityId: String,
-                                     title: String,
-                                     renamed: Match.Optional(Boolean),
-                                     upstreamTitle: Match.Optional(String), }, },
-                           { grain: { grainId: String,
-                                      saveLabel: LocalizedString,
-                                      introducerIdentity: String, }, },
-                           { frontend: null }));
+  check(owner, Match.OneOf({
+    webkey: Match.OneOf(null, {
+      forSharing: Boolean,
+      expiresIfUnusedDuration: Match.Optional(Number),
+    }),
+  }, {
+    user: {
+      identityId: String,
+      title: String,
+      renamed: Match.Optional(Boolean),
+      upstreamTitle: Match.Optional(String),
+    },
+  }, {
+    grain: {
+      grainId: String,
+      saveLabel: LocalizedString,
+      introducerIdentity: String,
+    },
+  }, {
+    frontend: null,
+  }));
+
   check(unauthenticated, Match.OneOf(undefined, null, {
     options: Match.Optional({ dav: [Match.Optional(DavClass)] }),
     resources: Match.Optional(ResourceMap),

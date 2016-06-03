@@ -68,7 +68,7 @@ GrainViewList = class GrainViewList {
 
     this._grainsUserId = new ReactiveVar(Meteor.userId());
 
-    // Although only ever construct a single global GrainViewList, and therefore we never need to
+    // Although we only ever construct a single global GrainViewList, and therefore we never need to
     // stop() the below autorun(), it's probably a good idea keep a reference to the handle, just in
     // case we need it someday.
     this._autoclearHandle = Tracker.autorun(() => {
@@ -83,7 +83,7 @@ GrainViewList = class GrainViewList {
         this._grainsUserId.set(currentUserId);
       }
     });
-  };
+  }
 
   clear() {
     const grains = this._grains.get();
@@ -123,6 +123,10 @@ GrainViewList = class GrainViewList {
     }
 
     return null;
+  }
+
+  contains(grainView) {
+    return this._grains.get().indexOf(grainView) != -1;
   }
 
   addNewGrainView(grainId, path, tokenInfo, parentElement) {

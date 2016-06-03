@@ -53,15 +53,23 @@ Template.identityLoginInterstitial.onCreated(function () {
     });
   } else {
     this.autorun(() => {
-      const sub = this.subscribe("accountsOfIdentity", Meteor.userId());
+      const identityId = Meteor.userId();
+      const sub = this.subscribe("accountsOfIdentity", identityId);
       if (sub.ready()) {
         const loginAccount = LoginIdentitiesOfLinkedAccounts.findOne({
-          _id: Meteor.userId(),
-          sourceIdentityId: Meteor.userId(),
+          _id: identityId,
+          sourceIdentityId: identityId,
         });
         if (loginAccount) {
-          Meteor.loginWithIdentity(loginAccount.loginAccountId);
-        } else if (!LoginIdentitiesOfLinkedAccounts.findOne({ sourceIdentityId: Meteor.userId() })) {
+          Meteor.loginWithIdentity(loginAccount.loginAccountId, () => {
+            // If the user is already visiting a grain, assume the identity with which they've
+            // logged in is the identity they would like to use on that grain.
+            const current = Router.current();
+            if (current.route.getName() === "shared") {
+              current.state.set("identity-chosen-by-login", identityId);
+            }
+          });
+        } else if (!LoginIdentitiesOfLinkedAccounts.findOne({ sourceIdentityId: identityId })) {
           Meteor.call("createAccountForIdentity", function (err, result) {
             if (err) {
               console.log("error", err);
@@ -157,7 +165,7 @@ Template.identityManagementButtons.helpers({
       }
     } else {
       if (LoginIdentitiesOfLinkedAccounts.findOne({ sourceIdentityId: this._id,
-                                                   loginAccountId: { $ne: Meteor.userId() }, })) {
+                                                    loginAccountId: { $ne: Meteor.userId() }, })) {
         return { why: "A shared identity is not allowed to be promoted to a login identity." };
       }
 
@@ -184,7 +192,7 @@ Template.loginIdentitiesOfLinkedAccounts.helpers({
   getOtherAccounts: function () {
     const id = Template.instance().data._id;
     return LoginIdentitiesOfLinkedAccounts.find({ sourceIdentityId: id,
-                                                 loginAccountId: { $ne: Meteor.userId() }, })
+                                                  loginAccountId: { $ne: Meteor.userId() }, })
         .fetch().map(function (identity) {
       SandstormDb.fillInPictureUrl(identity);
       return identity;
@@ -253,9 +261,11 @@ Template.identityCardSignInButton.events({
     const result = Accounts.identityServices[name].initiateLogin(data.identity.loginId);
     if ("form" in result) {
       const loginTemplate = Accounts.identityServices[name].loginTemplate;
-      instance._form.set({ loginId: data.identity.loginId,
-                           data: loginTemplate.data,
-                           name: loginTemplate.name, });
+      instance._form.set({
+        loginId: data.identity.loginId,
+        data: loginTemplate.data,
+        name: loginTemplate.name,
+      });
     }
   },
 });
@@ -296,13 +306,6 @@ Meteor.loginWithIdentity = function (accountId, callback) {
 const CURRENT_IDENTITY_KEY = "Accounts.CurrentIdentityId";
 
 Accounts.getCurrentIdentityId = function () {
-  // TODO(cleanup): `globalGrains` is only in scope here because of a Meteor bug. We should figure
-  //   out a better way to track a reference to it.
-  const activeGrain = globalGrains.getActive();
-  if (activeGrain) {
-    return activeGrain.identityId();
-  }
-
   const identityId = Session.get(CURRENT_IDENTITY_KEY);
   const identityIds = SandstormDb.getUserIdentityIds(Meteor.user());
   if (identityId && (identityIds.indexOf(identityId) != -1)) {
@@ -314,13 +317,5 @@ Accounts.getCurrentIdentityId = function () {
 
 Accounts.setCurrentIdentityId = function (identityId) {
   check(identityId, String);
-
-  // TODO(cleanup): `globalGrains` is only in scope here because of a Meteor bug. We should figure
-  //   out a better way to track a reference to it.
-  const activeGrain = globalGrains.getActive();
-  if (activeGrain) {
-    return activeGrain.switchIdentity(identityId);
-  }
-
   Session.set(CURRENT_IDENTITY_KEY, identityId);
 };

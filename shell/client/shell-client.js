@@ -17,6 +17,8 @@
 // This file implements the common shell components such as the top bar.
 // It also covers the root page.
 
+import getBuildInfo from "/imports/client/build-info.js";
+
 // Subscribe to basic grain information first and foremost, since
 // without it we might e.g. redirect to the wrong place on login.
 globalSubs = [
@@ -495,6 +497,10 @@ Template.layout.helpers({
     return globalAccountsUi;
   },
 
+  globalGrains: function () {
+    return globalGrains;
+  },
+
   identityUser: function () {
     const user = Meteor.user();
     return user && user.profile;
@@ -505,7 +511,7 @@ Template.layout.helpers({
   },
 
   accountButtonsData: function () {
-    return { isAdmin: globalDb.isAdmin() };
+    return { isAdmin: globalDb.isAdmin(), grains: globalGrains };
   },
 
   firstLogin: function () {
@@ -771,21 +777,6 @@ if (Meteor.isClient) {
   Router.onBeforeAction("loading");
 }
 
-function getBuildInfo() {
-  let build = Meteor.settings && Meteor.settings.public && Meteor.settings.public.build;
-  const isNumber = typeof build === "number";
-  if (!build) {
-    build = "(unknown)";
-  } else if (isNumber) {
-    build = String(Math.floor(build / 1000)) + "." + String(build % 1000);
-  }
-
-  return {
-    build: build,
-    isUnofficial: !isNumber,
-  };
-}
-
 const promptForFile = function (input, callback) {
   // TODO(cleanup): Share code with "upload picture" and other upload buttons.
   function listener(e) {
@@ -802,6 +793,7 @@ const startUpload = function (file, endpoint, onComplete) {
   //   progress callbacks (and officially document that binary input is accepted).
 
   Session.set("uploadStatus", "Uploading");
+  Session.set("uploadError", undefined);
 
   const xhr = new XMLHttpRequest();
 
@@ -879,17 +871,17 @@ promptUploadApp = function (input) {
 Router.map(function () {
   this.route("root", {
     path: "/",
-    waitOn: function () {
-      return [
-        Meteor.subscribe("hasUsers"),
-        Meteor.subscribe("grainsMenu"),
-      ];
+    subscriptions: function () {
+      this.subscribe("hasUsers").wait();
+      if (!Meteor.loggingIn() && Meteor.user() && Meteor.user().loginIdentities) {
+        this.subscribe("grainsMenu").wait();
+      }
     },
 
     data: function () {
       // If the user is logged-in, and can create new grains, and
       // has no grains yet, then send them to "new".
-      if (this.ready() && Meteor.userId() && !Meteor.loggingIn()) {
+      if (this.ready() && Meteor.userId() && !Meteor.loggingIn() && Meteor.user().loginIdentities) {
         if (globalDb.currentUserGrains({}, {}).count() === 0 &&
             globalDb.currentUserApiTokens().count() === 0) {
           Router.go("apps", {}, { replaceState: true });
@@ -898,8 +890,12 @@ Router.map(function () {
         }
       }
 
+      if (this.ready() && !HasUsers.findOne("hasUsers") && !globalDb.allowDevAccounts()) {
+        // This server has no users and hasn't been setup yet.
+        this.redirect("setupWizardIntro");
+      }
+
       return {
-        needsAdminTokenLogin: this.ready() && !HasUsers.findOne("hasUsers") && !globalDb.allowDevAccounts(),
         build: getBuildInfo().build,
         splashUrl: (Settings.findOne("splashUrl") || {}).value,
       };
@@ -1004,4 +1000,3 @@ Router.map(function () {
     path: "/account/usage",
   });
 });
-

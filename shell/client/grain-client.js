@@ -16,6 +16,8 @@
 
 // This file implements /grain, i.e. the main view into an app.
 
+import downloadFile from "/imports/client/download-file.js";
+
 // Pseudo-collections.
 TokenInfo = new Mongo.Collection("tokenInfo");
 // TokenInfo is used by grainview.js
@@ -39,6 +41,18 @@ const promptNewTitle = function () {
   }
 };
 
+const showConnectionGraph = function () {
+  const closer = globalTopbar.addItem({
+    name: "who-has-access",
+    template: Template.whoHasAccess,
+    popupTemplate: Template.whoHasAccessPopup,
+    startOpen: true,
+    onDismiss: function () {
+      return "remove";
+    },
+  });
+};
+
 const mapGrainStateToTemplateData = function (grainState) {
   const error = grainState.error();
   const templateData = {
@@ -48,6 +62,8 @@ const mapGrainStateToTemplateData = function (grainState) {
     error: error && error.message,
     unauthorized: error && (error.error == 403),
     notFound: error && (error.error == 404),
+    inMyTrash: grainState.isInMyTrash(),
+    inOwnersTrash: error && (error.error === "grain-is-in-trash"),
     appOrigin: grainState.origin(),
     hasNotLoaded: !(grainState.hasLoaded()),
     sessionId: grainState.sessionId(),
@@ -117,20 +133,10 @@ Template.grainDeleteButton.events({
   "click button": function (event) {
     const activeGrain = globalGrains.getActive();
     const grainId = activeGrain.grainId();
-    if (activeGrain.isOwner()) {
-      if (window.confirm("Really delete this grain?")) {
-        Meteor.call("deleteGrain", grainId);
-        globalGrains.remove(grainId, true);
-      }
-    } else {
-      if (window.confirm("Really forget this grain?")) {
-        const identityId = activeGrain.identityId();
-        if (identityId) {
-          Meteor.call("forgetGrain", grainId, identityId);
-        }
-
-        globalGrains.remove(grainId, true);
-      }
+    let confirmationMessage = "Really move this grain to your trash?";
+    if (window.confirm(confirmationMessage)) {
+      Meteor.call("moveGrainsToTrash", [grainId]);
+      globalGrains.remove(grainId, true);
     }
   },
 });
@@ -164,24 +170,9 @@ Template.grainBackupButton.events({
       if (err) {
         alert("Backup failed: " + err); // TODO(someday): make this better UI
       } else {
-        // Firefox for some reason decides to kill all websockets when we try to download the file
-        // by navigating there. So we're left doing a dirty hack to get around the popup blocker.
-        const isFirefox = typeof InstallTrigger !== "undefined";
-
-        if (isFirefox) {
-          const save = document.createElement("a");
-          save.href = "/downloadBackup/" + id;
-
-          save.download = activeGrain.title() + ".zip";
-          const event = document.createEvent("MouseEvents");
-          event.initMouseEvent(
-                  "click", true, false, window, 0, 0, 0, 0, 0,
-                  false, false, false, false, 0, null
-          );
-          save.dispatchEvent(event);
-        } else {
-          window.location = "/downloadBackup/" + id;
-        }
+        const url = "/downloadBackup/" + id;
+        const suggestedFilename = activeGrain.title() + ".zip";
+        downloadFile(url, suggestedFilename);
       }
     });
   },
@@ -289,16 +280,7 @@ Template.grainSharePopup.events({
 
   "click button.who-has-access": function (event, instance) {
     event.preventDefault();
-    const closer = globalTopbar.addItem({
-      name: "who-has-access",
-      template: Template.whoHasAccess,
-      popupTemplate: Template.whoHasAccessPopup,
-      data: new ReactiveVar(instance.data),
-      startOpen: true,
-      onDismiss: function () {
-        return "remove";
-      },
-    });
+    showConnectionGraph();
   },
 
   "click #privatize-grain": function (event) {
@@ -468,7 +450,7 @@ Template.grainPowerboxOfferPopup.events({
 
 Template.grainSharePopup.helpers({
   incognito: function () {
-    return !Accounts.getCurrentIdentityId();
+    return !globalGrains.getActive().identityId();
   },
 
   currentTokenUrl: function () {
@@ -480,6 +462,20 @@ Template.grainSharePopup.helpers({
 
   currentGrain: function () {
     return globalGrains.getActive();
+  },
+});
+
+Template.grainInMyTrash.events({
+  "click button.restore-from-trash": function (event, instance) {
+    const grain = globalGrains.getActive();
+    Meteor.call("moveGrainsOutOfTrash", [this.grainId], function (err, result) {
+      if (err) {
+        console.error(error.stack);
+      } else {
+        grain.reset(grain.identityId());
+        grain.openSession();
+      }
+    });
   },
 });
 
@@ -609,6 +605,11 @@ Template.grain.helpers({
   displayWebkeyButton: function () {
     const grain = globalGrains.getActive();
     return Meteor.userId() || (grain && !grain.isOldSharingModel());
+  },
+
+  displayTrashButton: function () {
+    const grain = globalGrains.getActive();
+    return Meteor.userId() && grain && !grain.isInMyTrash();
   },
 
   showPowerboxOffer: function () {
@@ -765,7 +766,7 @@ Template.whoHasAccessPopup.events({
     const transitiveShares = instance.transitiveShares.get();
     const tokensById = instance.downstreamTokensById.get();
     const recipientShares = _.findWhere(transitiveShares, { recipient: recipient });
-    const currentIdentityId = Accounts.getCurrentIdentityId();
+    const currentIdentityId = globalGrains.getActive().identityId();
     const recipientTokens = _.where(recipientShares.allShares, { identityId: currentIdentityId });
 
     // Two cases:
@@ -905,7 +906,7 @@ Template.whoHasAccessPopup.helpers({
         identityId: Template.instance().identityId,
         forSharing: true,
         $or: [
-          { owner: { webkey:null } },
+          { owner: { webkey: null } },
           { owner: { $exists: false } },
         ],
       }).fetch();
@@ -913,7 +914,7 @@ Template.whoHasAccessPopup.helpers({
   },
 
   isCurrentIdentity: function () {
-    if (this.identityId === Accounts.getCurrentIdentityId()) {
+    if (this.identityId === globalGrains.getActive().identityId()) {
       return true;
     }
   },
@@ -1045,7 +1046,8 @@ Template.emailInviteTab.helpers({
   },
 
   invitationExplanation: function () {
-    const primaryEmail = globalDb.getPrimaryEmail(Meteor.userId(), Accounts.getCurrentIdentityId());
+    const primaryEmail = globalDb.getPrimaryEmail(Meteor.userId(),
+                                                  globalGrains.getActive().identityId());
     if (primaryEmail) {
       return "Invitation will be from " + primaryEmail;
     } else {
@@ -1221,6 +1223,14 @@ Meteor.startup(function () {
       if (senderGrain === currentGrain && !globalTopbar.isPopupOpen()) {
         globalTopbar.openPopup("share");
       }
+    } else if (event.data.showConnectionGraph) {
+      // Allow the current grain to request that the "Who has access" dialog be shown.
+      // Only show this popup if no other popup is currently active.
+      // TODO(security): defend against malicious apps spamming this call, blocking all other UI.
+      const currentGrain = globalGrains.getActive();
+      if (senderGrain === currentGrain && !globalTopbar.isPopupOpen()) {
+        showConnectionGraph();
+      }
     } else if (event.data.setTitle || event.data.setTitle === "") {
       senderGrain.setFrameTitle(event.data.setTitle);
     } else if (event.data.renderTemplate) {
@@ -1386,28 +1396,67 @@ Meteor.startup(function () {
   window.addEventListener("message", messageListener, false);
 });
 
-const scrollLogToBottom = function (elem) {
-  elem.scrollTop = elem.scrollHeight;
-};
+Template.grainLogContents.onRendered(function () {
+  this.autorun(() => {
+    // Rerun onRenderedHook whenever the data changes
+    Template.currentData();
+    this.data.onRenderedHook && this.data.onRenderedHook();
+  });
+});
 
-const maybeScrollLog = function () {
-  const elem = document.getElementById("grainLog");
-  if (elem) {
-    // The log already exists. It's about to be updated. Check if it's scrolled to the bottom
-    // before the update.
-    if (elem.scrollHeight - elem.scrollTop === elem.clientHeight) {
-      // Indeed, so we want to scroll it back to the bottom after the update.
-      Tracker.afterFlush(function () { scrollLogToBottom(elem); });
+Template.grainLog.onCreated(function () {
+  this.shouldScroll = true;
+  this.renderedYet = false;
+
+  this.forceScrollBottom = () => {
+    this.lastNode.scrollTop = this.lastNode.scrollHeight;
+    this.shouldScroll = true;
+  };
+
+  this.maybeScrollToBottom = () => {
+    if (this.shouldScroll && this.renderedYet) {
+      this.forceScrollBottom();
     }
-  } else {
-    // No element exists yet, but it's probably about to be created, in which case we definitely
-    // want to scroll it.
-    Tracker.afterFlush(function () {
-      const elem2 = document.getElementById("grainLog");
-      if (elem2) scrollLogToBottom(elem2);
-    });
+  };
+
+  this.saveShouldScroll = () => {
+    const messagePane = this.lastNode;
+    this.shouldScroll = (messagePane.clientHeight + messagePane.scrollTop + 5 >= messagePane.scrollHeight);
+  };
+
+  this.resizeHandler = (evt) => {
+    this.maybeScrollToBottom();
+  };
+
+  window.addEventListener("resize", this.resizeHandler);
+});
+
+Template.grainLog.onRendered(function () {
+  if (!this.renderedYet) {
+    this.renderedYet = true;
+    this.maybeScrollToBottom();
   }
-};
+});
+
+Template.grainLog.onDestroyed(function () {
+  window.removeEventListener("resize", this.resizeHandler);
+});
+
+Template.grainLog.events({
+  "scroll .grainlog-contents"(evt) {
+    const instance = Template.instance();
+    instance.saveShouldScroll();
+  },
+});
+
+Template.grainLog.helpers({
+  maybeScrollToBottom() {
+    const instance = Template.instance();
+    return () => {
+      instance.maybeScrollToBottom();
+    };
+  },
+});
 
 Router.map(function () {
   this.route("apps", {
@@ -1442,7 +1491,12 @@ Router.map(function () {
         Router.go("root", {}, { replaceState: true });
       }
 
-      return new SandstormGrainListPage(globalDb, globalQuotaEnforcer);
+      return {
+        _db: globalDb,
+        _quotaEnforcer: globalQuotaEnforcer,
+        _staticHost: globalDb.makeWildcardHost("static"),
+        viewTrash: this.getParams().hash === "trash",
+      };
     },
   });
   this.route("grain", {
@@ -1454,6 +1508,9 @@ Router.map(function () {
     },
 
     onBeforeAction: function () {
+      // Don't do anything for non-account users.
+      if (Meteor.userId() && !Meteor.user().loginIdentities) return;
+
       // Only run the hook once.
       if (this.state.get("beforeActionHookRan")) return this.next();
 
@@ -1527,6 +1584,9 @@ Router.map(function () {
     },
 
     onBeforeAction: function () {
+      // Don't do anything for non-account users.
+      if (Meteor.userId() && !Meteor.user().loginIdentities) return;
+
       // Only run the hook once.
       if (this.state.get("beforeActionHookRan")) return this.next();
       this.state.set("beforeActionHookRan", true);
@@ -1555,6 +1615,8 @@ Router.map(function () {
           Router.go("/grain/" + tokenInfo.grainId + path, {}, { replaceState: true });
         } else if (tokenInfo.grainId) {
           const grainId = tokenInfo.grainId;
+          const identityChosenByLogin = this.state.get("identity-chosen-by-login");
+          this.state.set("identity-chosen-by-login", undefined);
 
           const openView = function openView() {
             // If the grain is already open in a tab, switch to that tab. We have to re-check this
@@ -1572,6 +1634,10 @@ Router.map(function () {
                                                                mainContentElement);
               grainToOpen.openSession();
               globalGrains.setActive(grainId);
+
+              if (identityChosenByLogin) {
+                grainToOpen.revealIdentity(identityChosenByLogin);
+              }
 
               if (!Meteor.userId()) {
                 // Suggest to the user that they log in by opening the login menu.
@@ -1627,14 +1693,13 @@ Router.map(function () {
 
     data: function () {
       if (this.ready()) {
-        maybeScrollLog();
         const grain = Grains.findOne(this.params.grainId);
         return {
           title: grain ? grain.title : "(deleted grain)",
           // jscs:disable requireCamelCaseOrUpperCaseIdentifiers
           html: AnsiUp.ansi_to_html(GrainLog.find({}, { $sort: { _id: 1 } })
               .map(function (entry) { return entry.text; })
-              .join(""), { use_classes:true }),
+              .join(""), { use_classes: true }),
           // jscs:enable requireCamelCaseOrUpperCaseIdentifiers
         };
       }
@@ -1650,7 +1715,14 @@ Router.map(function () {
     },
 
     data: function () {
-      return new SandstormAppDetails(globalDb, globalQuotaEnforcer, this.params.appId);
+      const params = this.getParams();
+      return {
+        _db: globalDb,
+        _quotaEnforcer: globalQuotaEnforcer,
+        _appId: params.appId,
+        viewingTrash: params.hash === "trash",
+        _staticHost: globalDb.makeWildcardHost("static"),
+      };
     },
   });
 

@@ -234,6 +234,28 @@ module.exports["Sign in at grain URL"] = function (browser) {
                     .waitForElementPresent("#publish", medium_wait)
                     .assert.containsText("#publish", "Publish")
                     .frame(null)
+
+                    // Log out then log in again while visiting the grain URL. Since the token has
+                    // already been redeemed, this may exercise a different code path than is
+                    // exercised above.
+                    .execute("window.Meteor.logout()")
+                    .url(browser.launch_url)
+                    .url(response.value)
+                    .waitForElementVisible("#grain-frame", medium_wait)
+                    .waitForElementVisible("#grainTitle", medium_wait)
+                    .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+                    .execute(function (name) { window.loginDevAccount(name) }, [otherName])
+                    .waitForElementNotPresent(".request-access", medium_wait)
+                    // The forget grain button only appears once we've logged in.
+                    .waitForElementVisible("#deleteGrain", medium_wait)
+                    .waitForElementVisible("#grainTitle", medium_wait)
+                    .waitForElementVisible("#grain-frame", medium_wait)
+                    .assert.containsText("#grainTitle", expectedHackerCMSGrainTitle)
+                    .frame("grain-frame")
+                    .waitForElementPresent("#publish", medium_wait)
+                    .assert.containsText("#publish", "Publish")
+                    .frame(null)
+
                     .end()
                 })
             });
@@ -249,7 +271,13 @@ module.exports["Logging out closes grain"] = function (browser) {
     .execute("window.Meteor.logout()")
     .waitForElementVisible(".request-access", medium_wait)
     .assert.containsText(".request-access", "Please sign in to request access.")
-    .end()
+
+    // At one point, we erroneously displayed two copies of the message. Check that there's only one.
+    .execute(function () {
+      return document.querySelectorAll(".request-access").length;
+    }, [], function (response) {
+      browser.assert.equal(response.value, 1);
+    }).end();
 }
 
 module.exports["Test grain anonymous user"] = function (browser) {
@@ -447,7 +475,7 @@ module.exports["Test grain identity chooser interstitial"] = function (browser) 
         .assert.containsText('#publish', 'Publish')
         .frame(null)
 
-        // Navigate to the url with an anonymous user
+        // Navigate to the url as a different user
         .loginDevAccount()
         .pause(short_wait)
         // Try incognito
@@ -457,7 +485,7 @@ module.exports["Test grain identity chooser interstitial"] = function (browser) 
         .waitForElementVisible('.grain-frame', medium_wait)
         .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
         .execute(function() {
-          return Accounts.getCurrentIdentityId();
+          return globalGrains.getActive().identityId();
         }, [], function (response) {
           browser.assert.equal(response.value, null);
         })
@@ -484,7 +512,7 @@ module.exports["Test grain identity chooser interstitial"] = function (browser) 
         .waitForElementVisible('.grain-frame', medium_wait)
         .assert.containsText('#grainTitle', expectedHackerCMSGrainTitle)
         .execute(function() {
-          return Accounts.getCurrentIdentityId();
+          return globalGrains.getActive().identityId();
         }, [], function (response) {
           browser.assert.equal(!!response.value, true);
         })

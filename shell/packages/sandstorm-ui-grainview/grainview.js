@@ -148,7 +148,9 @@ GrainView = class GrainView {
 
     // We want the iframe to receive the most recently-set path whenever we rerender.
     this._originalPath = this._path;
-    this._blazeView = Blaze.renderWithData(Template.grainView, this, this._parentElement);
+    if (this._grains.contains(this)) {
+      this._blazeView = Blaze.renderWithData(Template.grainView, this, this._parentElement);
+    }
   }
 
   switchIdentity(identityId) {
@@ -438,7 +440,7 @@ GrainView = class GrainView {
     }
 
     const myIdentityIds = SandstormDb.getUserIdentityIds(Meteor.user());
-    let resultIdentityId = myIdentityIds[0];
+    let resultIdentityId = Accounts.getCurrentIdentityId();
     const grain = this._db.getGrain(this._grainId);
     if (identityId && myIdentityIds.indexOf(identityId) != -1) {
       resultIdentityId = identityId;
@@ -808,6 +810,26 @@ GrainView = class GrainView {
         };
       },
     };
+  }
+
+  isInMyTrash() {
+    this._dep.depend();
+    const grain = this._db.collections.grains.findOne({ _id: this._grainId });
+
+    if (this._token) {
+      return false;
+    } else if (grain && Meteor.userId() === grain.userId) {
+      return !!grain.trashed;
+    } else {
+      const token = this._db.collections.apiTokens.findOne({
+        _id: this._grainId, });
+      const myIdentityIds = SandstormDb.getUserIdentityIds(Meteor.user());
+      return !!this._db.collections.apiTokens.findOne({
+        grainId: this._grainId,
+        "owner.user.identityId": { $in: myIdentityIds },
+        trashed: { $exists: true },
+      });
+    }
   }
 };
 

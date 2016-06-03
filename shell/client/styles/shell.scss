@@ -147,7 +147,7 @@ button.revoke-token, button.revoke-access {
   a {
     font-weight: bold;
     text-decoration: none;
-    color: #65468e;
+    color: $darker-purple-color;
   }
 }
 
@@ -204,7 +204,7 @@ button.revoke-token, button.revoke-access {
   align-items: center;
   flex-direction: column;
   background-color: $default-content-background-color;
-  button.request-access, button.incognito-button {
+  button.request-access, button.incognito-button, button.restore-from-trash {
     @extend %button-base;
     @extend %button-primary;
     font-weight: 600;
@@ -397,7 +397,7 @@ div.popup h2 {
     text-align: left;
     >a {
       font-weight: 600;
-      color: #65468e;
+      color: $darker-purple-color;
     }
   }
 
