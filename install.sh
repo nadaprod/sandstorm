@@ -70,10 +70,9 @@ fail() {
   fi
   error "$@"
   echo "" >&2
-  # Temporarily: export REPORT=yes to get the error reporting behavior. Once it seems stable, adjust
-  # the default from disabledfornow to yes.
-  if [ "${REPORT:-disabledfornow}" = "yes" ] ; then
-    if prompt-yesno "Sorry that installation failed. Would it be OK to send an anonymous error report to the sandstorm.io team?
+  # Users can export REPORT=no to avoid the error-reporting behavior, if they need to.
+  if [ "${REPORT:-yes}" = "yes" ] ; then
+    if USE_DEFAULTS=no prompt-yesno "Hmm, installation failed. Would it be OK to send an anonymous error report to the sandstorm.io team so we know something is wrong?
 It would only contain this error code: $error_code" "yes" ; then
       echo "Sending problem report..." >&2
       local BEARER_TOKEN="ZiV1jbwHBPfpIjF3LNFv9-glp53F7KcsvVvljgKxQAL"
@@ -82,14 +81,14 @@ It would only contain this error code: $error_code" "yes" ; then
         dotdotdot_curl \
           --silent \
           --max-time 20 \
-          --data-raw "{\"error_code\":\"$error_code\",\"user-agent\":\"$CURL_USER_AGENT\"}" \
+          --data-binary "{\"error_code\":\"$error_code\",\"user-agent\":\"$CURL_USER_AGENT\"}" \
           -H "Authorization: Bearer $BEARER_TOKEN" \
           -X POST \
           --output "/dev/null" \
           -w '%{http_code}' \
           "$API_ENDPOINT")
       if [ "200" == "$HTTP_STATUS" ] ; then
-        echo "... success." >&2
+        echo "... problem reported successfully. Your installation did not succeed." >&2
       elif [ "000" == "$HTTP_STATUS" ] ; then
         error "Submitting error report failed. Maybe there is a connectivity problem."
       else
@@ -198,6 +197,20 @@ prompt() {
     VALUE=$2
   fi
   echo "$VALUE"
+}
+
+prompt-numeric() {
+  local NUMERIC_REGEX="^[0-9]+$"
+  while true; do
+    local VALUE=$(prompt "$@")
+
+    if ! [[ "$VALUE" =~ $NUMERIC_REGEX ]] ; then
+      echo "You entered '$VALUE'. Please enter a number." >&3
+    else
+      echo "$VALUE"
+      return
+    fi
+  done
 }
 
 prompt-yesno() {
@@ -362,9 +375,9 @@ rerun_script_as_root() {
     # Probably ran like "bash install.sh" or "./install.sh".
     echo "Re-running script as root..."
     if [ ${#ORIGINAL_ARGS[@]} = 0 ]; then
-      exec sudo "$@" bash "$SCRIPT_NAME"
+      exec sudo $ENVVARS bash "$SCRIPT_NAME"
     else
-      exec sudo "$@" bash "$SCRIPT_NAME" "${ORIGINAL_ARGS[@]}"
+      exec sudo $ENVVARS bash "$SCRIPT_NAME" "${ORIGINAL_ARGS[@]}"
     fi
   fi
 
@@ -663,7 +676,7 @@ choose_install_mode() {
     echo "1. A typical install, to use Sandstorm (press enter to accept this default)"
     echo "2. A development server, for working on Sandstorm itself or localhost-based app development"
     echo ""
-    CHOSEN_INSTALL_MODE=$(prompt "How are you going to use this Sandstorm install?" "1")
+    CHOSEN_INSTALL_MODE=$(prompt-numeric "How are you going to use this Sandstorm install?" "1")
   fi
 
   if [ "1" = "$CHOSEN_INSTALL_MODE" ] ; then
@@ -1154,14 +1167,14 @@ choose_port() {
     return
   fi
 
-  PORT=$(prompt "Server main HTTP port:" $DEFAULT_PORT)
+  PORT=$(prompt-numeric "Server main HTTP port:" $DEFAULT_PORT)
 
   while [ "$PORT" -lt 1024 ]; do
     echo "Ports below 1024 require root privileges. Sandstorm does not run as root."
     echo "To use port $PORT, you'll need to set up a reverse proxy like nginx that "
     echo "forwards to the internal higher-numbered port. The Sandstorm git repo "
     echo "contains an example nginx config for this."
-    PORT=$(prompt "Server main HTTP port:" $DEFAULT_PORT)
+    PORT=$(prompt-numeric "Server main HTTP port:" $DEFAULT_PORT)
   done
 }
 
@@ -1171,7 +1184,7 @@ choose_mongo_port() {
     return
   fi
 
-  MONGO_PORT=$(prompt "Database port (choose any unused port):" "$((PORT + 1))")
+  MONGO_PORT=$(prompt-numeric "Database port (choose any unused port):" "$((PORT + 1))")
 }
 
 choose_external_or_internal() {

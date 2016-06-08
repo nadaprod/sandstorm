@@ -11,6 +11,8 @@ $[slow]Sandstorm makes it easy to run web apps on your own server. You can have:
 1. A typical install, to use Sandstorm (press enter to accept this default)
 2. A development server, for working on Sandstorm itself or localhost-based app development
 
+How are you going to use this Sandstorm install? [1] $[type]y
+You entered 'y'. Please enter a number.
 How are you going to use this Sandstorm install? [1] $[type]1
 We're going to:
 
